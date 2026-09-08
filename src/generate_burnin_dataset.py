@@ -228,7 +228,7 @@ def build(outdir=None, noise: dict | None = None, seed: int = 42,
         col = df[f"{p}_0h"]
         print(f"  {p:10s} 0h median={col.median():8.3f}  "
               f"168h median={df[f'{p}_168h'].median():8.3f}  USL={cfg['usl']}")
-    print(f"\nwritten to ./{OUTDIR}/")
+    print(f"\nwritten to {outdir}")
 
 
 if __name__ == "__main__":

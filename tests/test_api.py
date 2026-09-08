@@ -35,7 +35,6 @@ def test_part_endpoint_matches_the_pipeline_exactly(wide):
     client = TestClient(app)
     res = screen(wide)
     # The API screens the committed dataset; compare on a shared serial.
-    serial = client.get("/lots").json() and None
     worst = res.fused.sort_values("risk_score", ascending=False).iloc[0]
     r = client.get(f"/part/{worst.serial}")
     if r.status_code == 404:

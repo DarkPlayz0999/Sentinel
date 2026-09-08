@@ -20,8 +20,8 @@ from src.explain import lot_reason_codes, reason_codes
 from src.features import LOT_COL, PARAM_NAMES, build_features
 from src.fusion import Bands, RiskWeights, bands_for_pda, fuse, lot_pda_status
 from src.module_a import module_a_scores
-from src.module_b import (PowerLawForecaster, early_reject,
-                          early_warning_score, forecast_all)
+from src.module_b import (PowerLawForecaster, calibrate_population_k,
+                          early_reject, early_warning_score, forecast_all)
 
 __all__ = ["ScreenResult", "screen", "load_wide", "DATA"]
 
@@ -49,6 +49,9 @@ class ScreenResult:
     pda: pd.DataFrame
     bands: Bands
     exponents: dict = field(default_factory=dict)
+    # Population-gate k behind R-301, calibrated to the PDA budget
+    # rather than left at the blueprint's 4.5 (which fires on 26%).
+    population_k: float | None = None
     # False when the forecaster was fitted on the frame it predicts
     # (a single-lot inference call). A reported MAE requires True.
     forecast_out_of_fold: bool = True
@@ -81,7 +84,8 @@ def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
         # never saw its lot, so the MAE from this is reportable (rule 6).
         r = forecast_all(df, use_gbm=use_gbm, lot_col=lot_col)
         point, upper, exps = r.point, r.upper, r.mean_exponents
-        mb = early_reject(df, upper, lot_col=lot_col)
+        pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
+        mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
         out_of_fold = True
     elif has_late:
         # A single lot - the normal production case, screening one lot at a
@@ -92,10 +96,11 @@ def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
         m = PowerLawForecaster(use_gbm=use_gbm).fit(df, lot_col)
         point, upper, exps = (m.predict(df, lot_col), m.predict_upper(df, lot_col),
                               dict(m.exponents))
-        mb = early_reject(df, upper, lot_col=lot_col)
+        pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
+        mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
     else:
         point = upper = pd.DataFrame(index=df.index)
-        mb, exps = None, {}
+        mb, exps, pop_k = None, {}, None
 
     fused = fuse(df, feat, mb, weights, bands, lot_col)
     if bands is None and target_reject is not None:
@@ -111,6 +116,7 @@ def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
         early_score=early_warning_score(df, lot_col),
         fused=fused, pda=lot_pda_status(fused, lot_col), bands=bands,
         exponents=exps, forecast_out_of_fold=out_of_fold,
+        population_k=pop_k,
     )
 
 

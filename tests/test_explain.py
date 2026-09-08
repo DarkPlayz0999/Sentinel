@@ -7,8 +7,6 @@ value, or claims something the data does not support.
 
 import re
 
-import numpy as np
-import pandas as pd
 import pytest
 
 from src.features import PARAM_NAMES, PARAMS, build_features
@@ -138,7 +136,8 @@ def test_top_contributions_are_exact_not_approximated(scored):
     top = top_contributions(feat, i, n=5)
     assert len(top) == 5
     assert top.abs_z.is_monotonic_decreasing
-    for _, row in top[row_mask := top.in_pooled_score & (top.z > 0)].iterrows():
+    scored = top[top.in_pooled_score & (top.z > 0)]
+    for _, row in scored.iterrows():
         assert row.contribution == pytest.approx(row.z**2)
 
 

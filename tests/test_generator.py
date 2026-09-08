@@ -11,7 +11,6 @@ These tests exist to make that guarantee mechanical rather than a promise.
 import hashlib
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 

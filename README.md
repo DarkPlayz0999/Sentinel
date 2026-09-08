@@ -102,6 +102,12 @@ Full screening report — every number that appears in the deck:
 python -m src.report
 ```
 
+Signed one-page PDF for every rejected part, into `reports/`:
+
+```bash
+python -m src.screening_report
+```
+
 Other entry points:
 
 ```bash
@@ -163,6 +169,8 @@ src/
   sensitivity.py               how much of the ceiling is metrology, not model
   pipeline.py                  one call that runs the whole screen
   report.py                    every number that appears in the deck
+  screening_report.py          one-page signed PDF per rejected part
+  wafer.py                     wafer map + measured spatial-clustering test
   module_a.py                  dynamic outlier detection (L1 static, L2 DPAT, L3 multivariate, L4 ensemble)
   module_b.py                  drift forecast (power law + GBM + quantile bound)
   fusion.py                    0-100 screening risk score, ACCEPT/WATCH/REJECT
@@ -172,7 +180,7 @@ src/
 app/
   dashboard.py                 Streamlit QA-inspector dashboard
 data/                          generated CSVs (gitignored)
-tests/                         137 tests
+tests/                         150 tests
 docs/
 run_demo.sh                    one-command demo
 ```
@@ -370,11 +378,32 @@ rule 14 again, inside Module B.
 
 | Disposition | Parts | Recall | Overkill |
 |---|---|---|---|
-| REJECT | 105 (5.0 %) | 0.241 | 0.0 % |
-| REJECT + WATCH | 315 (15.0 %) | **0.805** | 6.0 % |
+| REJECT | 105 (5.0 %) | 0.201 | 0.4 % |
+| REJECT + WATCH | 315 (15.0 %) | **0.810** | 6.0 % |
 
-Five lots pass PDA; **L04 alone goes to review at 11.4 %** — the deliberately
-bad lot, found without being told it exists. That is R-601 working.
+Recall at a 5 % overkill budget on the fused score is **0.776**.
+
+> **R-301's gate is calibrated, not fixed.** The blueprint sets the population
+> safety slope at `median + 4.5·robust σ`. On this data that fires on **25.8 %**
+> of parts, because the predicted-slope distribution stays heavy-tailed even on
+> the log scale and MAD is robust enough to ignore its tail — so the limit lands
+> near the distribution's own 90th percentile rather than out in it. A reason
+> code that fires on a quarter of the lot tells an inspector nothing, and it
+> blows the PDA gate five times over. `calibrate_population_k` derives k from a
+> stated budget instead (k ≈ 30.5 for a 5 % gate), the same way every other
+> threshold here is chosen. It targets a *flagged fraction*, not an overkill
+> rate, so it stays unsupervised and runs on a lot you have never seen.
+>
+> Separately: the **mission** gate essentially never binds (0.0–0.1 % of parts).
+> 168 burn-in hours at AF ≈ 937 is 18 years, while a 7-year mission is only 65.5
+> equivalent hours, so a part would have to fail catastrophically inside the
+> burn-in to trip it. The population gate does all the work.
+
+Per-lot disposition — **L04 breaches PDA decisively at 9.7 %** against L03's
+2.3 %, and it is the deliberately bad lot, found without being told it exists.
+L01 (5.4 %) and L06 (5.7 %) breach marginally, which is exactly what a *global*
+band tuned to the gate value produces: roughly half the lots land either side
+of it. The informative comparison is L04 against L03, not the marginal pair.
 
 The fused score costs 0.043 PR-AUC against its best single sub-score (0.3656 vs
 0.4083). That is the price of a verdict an inspector can decompose, and it
@@ -410,6 +439,8 @@ models you have no scorer for. All nine steps are done.
 7. ✅ `explain.py` — reason codes R-101…R-601, drift plot, part report.
 8. ✅ `app/dashboard.py` — six screens, cost-ratio slider.
 9. ✅ `api.py`, `pipeline.py`, `report.py`, `run_demo.sh`.
+10. ✅ `screening_report.py` — one-page signed PDF per rejected part.
+11. ✅ `wafer.py` — wafer map, plus a permutation test for spatial clustering.
 
 Diagnostics to re-run after any change that moves recall:
 

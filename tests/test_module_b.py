@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.features import PARAM_NAMES, PARAMS
+from src.features import PARAM_NAMES
 from src.module_b import (
     PowerLawForecaster,
     arrhenius_af,

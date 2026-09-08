@@ -40,3 +40,4 @@ python-multipart==0.0.17   # required by FastAPI for the POST /screen upload
 # ---- test --------------------------------------------------------------
 pytest==8.3.3
 httpx==0.27.2              # required by fastapi.testclient
+pypdf==6.1.1               # asserts the screening report is one page

@@ -4,8 +4,8 @@ Hackathon project. Detect **latent defects** in high-reliability electronic
 components: parts that pass every static datasheet limit but drift abnormally
 during burn-in and fail early in the field.
 
-Full spec: `docs/SENTINEL_Blueprint.pdf`. Read it before proposing architecture
-changes.
+Full spec: `docs/SENTINEL_Burn-In_Anomaly_Detection_Blueprint.pdf`.
+Read it before proposing architecture changes.
 
 ## The problem in five lines
 

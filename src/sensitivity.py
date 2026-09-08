@@ -43,7 +43,7 @@ import pandas as pd
 from src.evaluate import pr_auc, recall_at_overkill
 from src.features import PARAM_NAMES, build_features
 from src.generate_burnin_dataset import MEAS_NOISE, build
-from src.module_a import dpat_score, pooled_evidence_score
+from src.module_a import pooled_evidence_score
 
 __all__ = ["NOISE_MODELS", "run_noise_model", "sensitivity_table", "main"]
 

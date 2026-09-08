@@ -8,10 +8,8 @@ re-reading the blueprint and rebuilding the thing it recommends.
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.diagnose_misses import (
-    QUIET_Z,
     bucket_misses,
     lot_inflation,
     pooled_z,

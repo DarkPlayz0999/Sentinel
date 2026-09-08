@@ -35,14 +35,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.features import (
-    LOT_COL,
-    PARAM_NAMES,
-    PARAMS,
-    build_features,
-    robust_sigma,
-    transform,
-)
+from src.features import LOT_COL, PARAM_NAMES, PARAMS, build_features
 from src.module_a import DRIFT_AXES, pooled_evidence_contributions
 
 __all__ = [
@@ -315,6 +308,10 @@ def drift_plot(df: pd.DataFrame, i, param: str, ax=None,
     ax.set_ylabel(f"{param} ({PARAMS[param]['unit']})")
     ax.set_title(f"{r['serial']} — {PARAMS[param]['label']}")
     ax.set_xticks(hours)
-    ax.legend(fontsize=8, loc="best")
+    # Pinned upper-left with a solid frame rather than loc="best": the traces
+    # rise left-to-right, so "best" lands the legend on top of the lot envelope
+    # exactly where the reader is trying to see the part leave the herd.
+    ax.legend(fontsize=7, loc="upper left", framealpha=0.93, borderpad=0.4)
     ax.grid(alpha=0.25)
+    ax.margins(y=0.12)
     return ax

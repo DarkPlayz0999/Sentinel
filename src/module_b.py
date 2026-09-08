@@ -43,6 +43,13 @@ Safety slope (blueprint 8.4) - defined two independent ways, stricter wins:
 its siblings. Either is grounds for rejection. They are separate gates, not
 min()'d into one number - they are in different units.
 
+MEASURED: the mission gate essentially never binds on this dataset (it fires on
+0.0-0.1% of parts per parameter). 168 burn-in hours at AF ~937 is 18 years,
+while a 7-year mission is only 65.5 equivalent hours, so a part would have to
+drift catastrophically inside the burn-in to fail it. The population gate is
+doing all the work, and its k is calibrated from a budget rather than left at
+the blueprint's 4.5 - see `calibrate_population_k`.
+
 Measured results, and what they mean for the pitch
 --------------------------------------------------
 FORECAST QUALITY is real. Out-of-fold MAE on Value_168h, GroupKFold by lot:
@@ -110,6 +117,7 @@ __all__ = [
     "fit_global_exponent", "physics_forecast",
     "PowerLawForecaster", "ForecastResult",
     "forecast_all", "safety_slope", "early_reject", "early_warning_score",
+    "calibrate_population_k",
 ]
 
 # Arrhenius constants. Ea = 0.7 eV is the conventional default for the mixed
@@ -420,6 +428,36 @@ def early_warning_score(df: pd.DataFrame, lot_col: str = LOT_COL) -> pd.Series:
     # One-sided: higher is worse for every parameter here (rule 4).
     z = pd.DataFrame(cols, index=df.index).clip(lower=0)
     return (z**2).sum(axis=1, skipna=True)
+
+
+def calibrate_population_k(df: pd.DataFrame, forecast_upper: pd.DataFrame,
+                           target_flag_rate: float = 0.05,
+                           lot_col: str = LOT_COL,
+                           grid=np.arange(4.5, 60.1, 0.5)) -> float:
+    """Pick the population-gate k from a budget instead of a magic number.
+
+    The blueprint fixes k at 4.5. On this dataset that gate fires on 25.8% of
+    parts, because the predicted-slope distribution stays heavy-tailed even on
+    the log scale and MAD is robust enough to ignore its tail - so median + 4.5
+    robust sigma sits near the distribution's own 90th percentile rather than
+    out in the tail. A reason code that fires on a quarter of the lot tells an
+    inspector nothing, and it blows the PDA gate five times over.
+
+    So k is derived the way every other threshold in this repo is (rule 7): from
+    a stated budget. Returns the smallest k whose gate flags no more than
+    ``target_flag_rate`` of the parts, defaulting to the 5% PDA allowance.
+
+    Deliberately UNSUPERVISED - it targets a flagged fraction, not an overkill
+    rate, so it needs no labels and is implementable on a lot you have never
+    seen. Calibrating against overkill would need ground truth that does not
+    exist at inference time.
+    """
+    for k in grid:
+        rate = early_reject(df, forecast_upper, lot_col=lot_col,
+                            k=float(k)).reject_at_24h.mean()
+        if rate <= target_flag_rate:
+            return float(k)
+    return float(grid[-1])
 
 
 def early_reject(df: pd.DataFrame, forecast_upper: pd.DataFrame,

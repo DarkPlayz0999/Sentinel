@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 from src.evaluate import pr_auc, recall_at_overkill
-from src.features import PARAM_NAMES, PARAMS, build_features, robust_sigma
+from src.features import PARAM_NAMES, PARAMS, build_features
 from src.generate_burnin_dataset import MEAS_NOISE
 from src.module_a import (
     DRIFT_AXES,
@@ -195,7 +195,7 @@ def main() -> None:
     print(drift_vs_noise(df).round(3).to_string())
 
     score = dpat_score(feat)
-    print(f"\n   recall by carrying parameter, at L2 |z| >= 4.5")
+    print("\n   recall by carrying parameter, at L2 |z| >= 4.5")
     print(recall_by_carrying_parameter(df, score, 4.5, feat).to_string())
     print("\n   -> the blind spot follows drift_scale, not the model. See")
     print("      src/sensitivity.py for what that costs in recall.\n")

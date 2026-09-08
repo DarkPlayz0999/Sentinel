@@ -15,6 +15,8 @@ Screens, in the order the demo walks them:
                         datasheet limits overlaid
     Model Performance   confusion matrix, recall-vs-overkill curve, MAE table
     Decision Policy     the cost-ratio slider. The demo centrepiece.
+    Wafer Map           die grid coloured by risk, with a measured answer to
+                        whether the flags actually cluster
 """
 
 from __future__ import annotations
@@ -22,7 +24,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -34,8 +35,9 @@ from src.evaluate import (                                        # noqa: E402
 )
 from src.explain import drift_plot, reason_codes_for_part          # noqa: E402
 from src.features import PARAMS, PARAM_NAMES, dpat_limits, transform  # noqa: E402
-from src.fusion import Bands, RiskWeights, bands_for_pda, fuse, lot_pda_status  # noqa: E402
+from src.fusion import RiskWeights, bands_for_pda, fuse, lot_pda_status  # noqa: E402
 from src.pipeline import load_wide, screen                        # noqa: E402
+from src.wafer import plot_wafer_map, spatial_clustering          # noqa: E402
 
 st.set_page_config(page_title="SENTINEL", page_icon="🛰", layout="wide")
 
@@ -61,7 +63,7 @@ st.sidebar.title("SENTINEL")
 st.sidebar.caption("Explainable burn-in screening. **All data is simulated.**")
 page = st.sidebar.radio("Screen", [
     "Lot Overview", "Part Table", "Part Detail", "Distributions",
-    "Model Performance", "Decision Policy"])
+    "Model Performance", "Decision Policy", "Wafer Map"])
 st.sidebar.metric("Parts screened", len(df))
 st.sidebar.metric("Latent defects (ground truth)", int(y.sum()))
 st.sidebar.caption(f"bands: WATCH ≥ {res.bands.watch:.1f}, "
@@ -277,3 +279,36 @@ elif page == "Decision Policy":
     c[3].metric("Lots over PDA",
                 int((lot_pda_status(retuned).status == "LOT REVIEW").sum()))
     st.dataframe(lot_pda_status(retuned), use_container_width=True)
+
+
+# ---------------------------------------------------------------- wafer map
+elif page == "Wafer Map":
+    st.title("Wafer map")
+    st.caption("Die grid coloured by screening risk, rejected dies ringed. "
+               "Spatial clustering of defects is real in a fab — a scratch, a "
+               "litho excursion, an edge effect — so this is how an inspector "
+               "would actually look at a lot.")
+
+    wafer = st.selectbox("Wafer", sorted(df.wafer.unique()))
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(7, 5.6))
+    plot_wafer_map(df, res.fused, wafer, ax=ax)
+    st.pyplot(fig)
+
+    st.subheader("Does the flagging actually cluster?")
+    sc = spatial_clustering(df, res.fused, n_permutations=120)
+    c = st.columns(4)
+    c[0].metric("Flagged neighbours (observed)", f"{sc['observed']:.3f}")
+    c[1].metric("Permutation null mean", f"{sc['null_mean']:.3f}")
+    c[2].metric("p-value", f"{sc['p_value']:.3f}")
+    c[3].metric("Clustered?", "yes" if sc["clustered"] else "no")
+
+    if sc["clustered"]:
+        st.warning(sc["verdict"])
+    else:
+        st.info(
+            f"{sc['verdict']}. Measured, not assumed: the generator places die "
+            "coordinates uniformly at random and independently of a part's "
+            "class, so there is no spatial structure in this dataset to find. "
+            "The view is ready for real wafer data, where the clustering is "
+            "genuine — but do not claim it on this data.")

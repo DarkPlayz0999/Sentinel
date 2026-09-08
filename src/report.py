@@ -8,16 +8,13 @@ Nothing here computes a metric of its own.
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-
 from src.evaluate import (
     evaluate_screening, format_report, pr_auc, recall_at_overkill,
     regression_metrics, screening_metrics,
 )
 from src.explain import lot_reason_codes, part_report, reason_codes
-from src.features import PARAM_NAMES, PARAMS, build_features
-from src.fusion import RiskWeights, lot_pda_status
+from src.features import PARAM_NAMES
+from src.fusion import RiskWeights
 from src.module_a import dpat_score, pooled_evidence_score, static_limit_flags
 from src.pipeline import load_wide, screen
 
