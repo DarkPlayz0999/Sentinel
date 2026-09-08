@@ -146,6 +146,9 @@ src/
   generate_burnin_dataset.py   synthetic data, fixed seed, DO NOT change the seed
   baseline.py                  the hour-6 checkpoint; stays in the repo forever
   features.py                  the ONLY place features are defined
+  diagnose_misses.py           why a missed part was missed; buckets (a)/(b)/(c)
+  diagnose_why.py              is there joint structure? where is recall going?
+  sensitivity.py               how much of the ceiling is metrology, not model
   module_a.py                  dynamic outlier detection (L1 static, L2 DPAT, L3 multivariate, L4 ensemble)
   module_b.py                  drift forecast (power law + GBM + quantile bound)
   fusion.py                    0-100 screening risk score, ACCEPT/WATCH/REJECT
@@ -159,8 +162,10 @@ tests/
 docs/
 ```
 
-Everything under `src/` except the two shipped scripts is currently a
-documented stub — the contract is written down, the implementation is not.
+Implemented: `generate_burnin_dataset.py`, `features.py`, `evaluate.py`,
+`module_a.py` (L1/L2/L3), `baseline.py`, and the three diagnostics.
+Still documented stubs — contract written down, implementation not:
+`module_b.py`, `fusion.py`, `explain.py`, `api.py`, `app/dashboard.py`.
 
 ## Rules that are not negotiable
 
@@ -199,6 +204,16 @@ Summarised from `CLAUDE.md`, which is the authority. Read it in full.
     model output. ML improves the sub-scores; it does not make the decision.
 12. Every flag emits a reason code (R-101 … R-601) in inspector-facing English
     containing the actual value *and* the lot reference value.
+
+**Measured facts about this dataset** — settled, do not relitigate
+
+13. The delta-vector covariance is **diagonal** (max |ρ| 0.153, permutation-null
+    p95 0.189). Do not claim multivariate methods catch "correlation breaks";
+    they work here by pooling marginal evidence. Verify before claiming
+    otherwise.
+14. Recall is bounded by **measurement noise**, not by the model. Always state
+    the operating point with the number, and never regenerate `data/` to
+    improve a score — run `python -m src.sensitivity` instead.
 
 ## Definition of done
 
@@ -251,8 +266,66 @@ combination, so getting past the plateau needs the L3 multivariate layer.
 The curvature view earns less than the blueprint predicts. It lifts recall at a
 fixed threshold (0.414 → 0.448 at |z| ≥ 8) but leaves PR-AUC unchanged at
 0.3889 to four decimal places, so it reorders nothing — it only shifts where a
-given threshold lands. Treat it as a reason-code signal, not a ranking gain,
-until L3 is in place.
+given threshold lands. Treat it as a reason-code signal, not a ranking gain.
+
+### Module A L3 — pooled evidence
+
+| Score | PR-AUC | R @ 5% | R @ 10% |
+|---|---|---|---|
+| L2 worst-case \|z\|, 20 features | 0.3889 | 0.764 | 0.839 |
+| MinCovDet Mahalanobis, 4-d delta *(comparison)* | 0.4038 | 0.776 | 0.874 |
+| **L3 one-sided sum of squares, 4 drift axes** | **0.4083** | **0.776** | **0.874** |
+
+> **The blueprint's correlation-break rationale does not hold on this dataset.**
+> The delta-vector covariance is diagonal: the worst off-diagonal Spearman |ρ|
+> across all six lots is 0.153, against a permutation-null p95 of 0.189 — i.e.
+> *indistinguishable from zero* once you account for 36 pairwise comparisons at
+> ~300 healthy parts per lot. Of the misses Mahalanobis rescues, **zero** have
+> every marginal |z| below 2.0.
+>
+> Multivariate methods still help here, but by **pooling marginal evidence
+> across axes**, not by detecting an impossible combination. That is why L3
+> ships a plain sum of squares: with a diagonal covariance it is the same
+> statistic with nothing left to estimate, it ties or beats MinCovDet, and an
+> inspector can read it. MinCovDet stays as a comparison row — it is the right
+> generalisation for real fab data where parameters genuinely do correlate, it
+> simply has nothing extra to exploit here. Do not put "correlation break" on a
+> slide. See `python -m src.diagnose_why`.
+
+The score is one-sided because higher is worse for every parameter here: a part
+drifting *down* on a leakage current is not a defect, and a symmetric square
+credits it as though it were (0.4083 vs 0.4026).
+
+### Where the screen is blind
+
+Recall at L2 |z| ≥ 4.5, split by which parameter carries each defect:
+
+| Carried by | Missed | Caught | Recall | Drift scale |
+|---|---|---|---|---|
+| Iddq_uA | 13 | 49 | 0.790 | 1.00 |
+| Ileak_nA | 8 | 52 | 0.867 | 1.00 |
+| **Tpd_ns** | 25 | 8 | **0.242** | 0.12 |
+| **Vol_mV** | 11 | 8 | **0.421** | 0.12 |
+
+The blind spot follows `drift_scale`, not the model. Timing and voltage drift is
+scaled to 0.12 in the generator while measurement noise is a flat 1.5%, so a
+median latent defect on those axes moves ~2.6–2.9% — barely twice the noise.
+
+**This is a metrology limit, not an algorithm limit.** `python -m src.sensitivity`
+re-runs the same physics, seed and scoring pipeline under alternative ATE
+repeatability, writing to a temp directory so `data/` is never touched:
+
+| Noise model | PR-AUC | R @ 5% | R @ 10% | R Tpd/Vol | R Iddq/Ileak |
+|---|---|---|---|---|---|
+| flat 1.5% (committed dataset) | 0.408 | 0.776 | 0.874 | 0.654 | 0.967 |
+| 1.5% currents / 0.8% timing+voltage | 0.455 | 0.885 | 0.925 | 0.852 | 0.965 |
+| 1.5% currents / 0.4% timing+voltage | 0.476 | 0.914 | 0.948 | 0.920 | 0.970 |
+| 0.4% all parameters | 0.471 | 0.897 | 0.937 | 0.897 | 0.962 |
+
+To catch timing-carried latent defects, invest in tester repeatability — a
+better model cannot recover signal that was never measured. **All headline
+numbers in this README use the committed flat-1.5% dataset**; the table above is
+a stated sensitivity analysis, never a substitute for it.
 
 ## Build order
 
@@ -270,6 +343,20 @@ models you have no scorer for.
 7. `explain.py` — reason codes, the drift-vs-lot-envelope plot, SHAP.
 8. `app/dashboard.py` — lot table, part drill-down, cost-ratio slider.
 9. `api.py`, screening report PDF, `run_demo.sh`.
+
+Diagnostics to re-run after any change that moves recall:
+
+```bash
+python -m src.diagnose_why
+```
+
+```bash
+python -m src.diagnose_misses 20
+```
+
+```bash
+python -m src.sensitivity
+```
 
 ## Vocabulary
 

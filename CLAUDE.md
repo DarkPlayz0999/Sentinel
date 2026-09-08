@@ -52,6 +52,18 @@ Explainability (a third of the marks):
 12. Every flag emits a reason code (R-101…R-601) with inspector-facing English
     containing the actual value and the lot reference value.
 
+Measured facts about this dataset (settled — do not relitigate):
+13. The delta-vector covariance in this dataset is diagonal (max |rho| ~ 0.1).
+    Do not claim multivariate methods catch "correlation breaks". They work
+    here by pooling marginal evidence across axes, which is a real but
+    different gain. Verify before claiming otherwise.
+14. Recall is bounded by measurement noise, not by the model. Defects carried
+    by Tpd_ns/Vol_mV score 0.24-0.42 recall at L2 |z|>=4.5, and 0.65 under L3
+    at a 10% overkill budget, against the dataset's flat 1.5% ATE noise. Drop
+    timing/voltage noise to 0.4% and the same pipeline reaches 0.92. Always
+    state the operating point with the number. Report the sensitivity analysis
+    (`python -m src.sensitivity`); never regenerate data/ to improve a score.
+
 ## Repo layout
 
 ```
