@@ -84,10 +84,22 @@ prints a sanity report. Seed is fixed at 42 — **do not change it**; every
 number in the deck is traceable to it, and teammates must get byte-identical
 output.
 
+Or run the whole thing end to end — this is what a judge will ask for:
+
+```bash
+bash run_demo.sh
+```
+
 Verify the baseline you have to beat:
 
 ```bash
-python src/baseline.py
+python -m src.baseline
+```
+
+Full screening report — every number that appears in the deck:
+
+```bash
+python -m src.report
 ```
 
 Other entry points:
@@ -149,6 +161,8 @@ src/
   diagnose_misses.py           why a missed part was missed; buckets (a)/(b)/(c)
   diagnose_why.py              is there joint structure? where is recall going?
   sensitivity.py               how much of the ceiling is metrology, not model
+  pipeline.py                  one call that runs the whole screen
+  report.py                    every number that appears in the deck
   module_a.py                  dynamic outlier detection (L1 static, L2 DPAT, L3 multivariate, L4 ensemble)
   module_b.py                  drift forecast (power law + GBM + quantile bound)
   fusion.py                    0-100 screening risk score, ACCEPT/WATCH/REJECT
@@ -158,14 +172,14 @@ src/
 app/
   dashboard.py                 Streamlit QA-inspector dashboard
 data/                          generated CSVs (gitignored)
-tests/
+tests/                         137 tests
 docs/
+run_demo.sh                    one-command demo
 ```
 
-Implemented: `generate_burnin_dataset.py`, `features.py`, `evaluate.py`,
-`module_a.py` (L1/L2/L3), `baseline.py`, and the three diagnostics.
-Still documented stubs — contract written down, implementation not:
-`module_b.py`, `fusion.py`, `explain.py`, `api.py`, `app/dashboard.py`.
+All of it is implemented and tested. The pipeline runs end to end from an
+empty `data/`, and the API, the dashboard and `src/report.py` all call
+`src/pipeline.py`, so none of them can disagree about a part.
 
 ## Rules that are not negotiable
 
@@ -327,22 +341,75 @@ better model cannot recover signal that was never measured. **All headline
 numbers in this README use the committed flat-1.5% dataset**; the table above is
 a stated sensitivity analysis, never a substitute for it.
 
+## Results
+
+**Module B — forecast `Value_168h` from 0h + 24h only.** Out-of-fold,
+GroupKFold by lot:
+
+| Parameter | n* | MAE | linear | last-value | vs linear |
+|---|---|---|---|---|---|
+| Iddq_uA | 0.41 | **1.313** | 2.352 | 1.835 | −44 % |
+| Ileak_nA | 0.41 | **2.595** | 4.559 | 3.598 | −43 % |
+| Tpd_ns | 0.00 | 0.157 | 0.388 | **0.113** | −60 % |
+| Vol_mV | 0.00 | 8.624 | 26.231 | **7.545** | −67 % |
+
+`n* = 0` means the fit found no extrapolable signal on that axis: the best 168 h
+estimate is the 24 h reading, and plain last-value-carried-forward wins. That is
+rule 14 again, inside Module B.
+
+> **Do not pitch Module B as an equally accurate screen made earlier.** At hour
+> 24 it catches ~33 % of latent defects at a 10 % overkill budget, against
+> ~87 % at hour 168. The forecasting adds nothing to *detection* — the raw
+> early-delta z ranks defects as well as anything built on top of it, because a
+> forecast is a near-monotone function of the early delta plus a level that
+> carries no defect information. The honest claim is a **triage layer**: pull
+> the worst offenders 144 oven-hours early, then run the full screen on the
+> rest.
+
+**Fusion — the three-band verdict**, with REJECT sized to the 5 % PDA budget:
+
+| Disposition | Parts | Recall | Overkill |
+|---|---|---|---|
+| REJECT | 105 (5.0 %) | 0.241 | 0.0 % |
+| REJECT + WATCH | 315 (15.0 %) | **0.805** | 6.0 % |
+
+Five lots pass PDA; **L04 alone goes to review at 11.4 %** — the deliberately
+bad lot, found without being told it exists. That is R-601 working.
+
+The fused score costs 0.043 PR-AUC against its best single sub-score (0.3656 vs
+0.4083). That is the price of a verdict an inspector can decompose, and it
+belongs on the slide rather than hidden:
+
+| Sub-score | Weight | PR-AUC | R @ 5 % |
+|---|---|---|---|
+| static_margin | 0.30 | 0.3182 | 0.586 |
+| dynamic_outlier | 0.25 | 0.3889 | 0.764 |
+| predicted_drift | 0.20 | 0.1248 | 0.138 |
+| multivariate | 0.15 | **0.4083** | **0.776** |
+| curvature | 0.10 | 0.3101 | 0.546 |
+| **fused** | 1.00 | 0.3656 | 0.741 |
+
+> Measured on the *unsquashed* quantities. Average precision flatters a
+> saturating score — clipping the DPAT score at 6 σ ties 167 parts at the
+> ceiling and inflates its PR-AUC from 0.3889 to 0.4825. `evaluate.pr_auc`
+> warns when it sees a large tied block; use `sub_scores(..., squash_to_100=False)`
+> for any ranking comparison.
+
 ## Build order
 
-Deliberate: the scorer comes before the models, because you cannot compare
-models you have no scorer for.
+Deliberate: the scorer came before the models, because you cannot compare
+models you have no scorer for. All nine steps are done.
 
-1. `evaluate.py` — recall, precision, F₂, PR-AUC, recall-vs-overkill curve,
-   cost-minimising threshold, grouped by lot. **With tests.**
-2. `features.py` — the four robust-z views per parameter, per lot. **With
-   tests.**
-3. Module A L1 + L2 — reproduce and then beat the baseline table above.
-4. Module B — the power-law forecast, MAE per parameter, safety slope.
-5. Module A L3 — robust Mahalanobis (MinCovDet) on the delta vector.
-6. `fusion.py` — the weighted risk score and three-band verdict.
-7. `explain.py` — reason codes, the drift-vs-lot-envelope plot, SHAP.
-8. `app/dashboard.py` — lot table, part drill-down, cost-ratio slider.
-9. `api.py`, screening report PDF, `run_demo.sh`.
+1. ✅ `evaluate.py` — recall, precision, F₂, PR-AUC, recall-vs-overkill,
+   cost-minimising threshold, `GroupKFold(groups=lot)`.
+2. ✅ `features.py` — four robust-z views per parameter, per lot.
+3. ✅ Module A L1 + L2 — reproduces blueprint §12 exactly.
+4. ✅ Module B — power-law forecast, MAE, safety slope, quantile bound.
+5. ✅ Module A L3 — one-sided pooled evidence (**not** Mahalanobis; see above).
+6. ✅ `fusion.py` — weighted risk score, three-band verdict, PDA-aware bands.
+7. ✅ `explain.py` — reason codes R-101…R-601, drift plot, part report.
+8. ✅ `app/dashboard.py` — six screens, cost-ratio slider.
+9. ✅ `api.py`, `pipeline.py`, `report.py`, `run_demo.sh`.
 
 Diagnostics to re-run after any change that moves recall:
 

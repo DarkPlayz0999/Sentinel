@@ -66,6 +66,8 @@ __all__ = [
     "dpat_limits",
     "transform",
     "build_features",
+    "build_forecast_features",
+    "FORECAST_FEATURE_NAMES",
     "feature_names",
     "early_feature_names",
     "lot_reference_table",
@@ -340,6 +342,64 @@ def early_feature_names() -> list[str]:
     """
     early_views = [v for v, hours in VIEWS.items() if max(hours) <= 24]
     return [f"z_{p}_{v}" for p in PARAM_NAMES for v in early_views]
+
+
+def build_forecast_features(df: pd.DataFrame, param: str,
+                            lot_col: str = LOT_COL) -> pd.DataFrame:
+    """Hour-24 feature block for one parameter, for Module B.
+
+    Rule 8: Module B's inputs are defined here, not inside module_b.py, so the
+    training path and the hour-24 inference path cannot drift apart.
+
+    Every column is computable from the 0h and 24h reads alone. Nothing derived
+    from 96h or 168h may ever appear here - that would leak the answer into the
+    question. ``test_forecast_features_use_no_late_reads`` asserts it by
+    rebuilding from a frame with the late columns deleted.
+
+    Columns (all on the statistics scale - log for currents):
+
+        v0, v24            absolute level; high starting leakage predicts high
+                           absolute drift
+        early              v24 - v0, the only movement visible at hour 24
+        early_ratio        relative movement; generalises across lots where the
+                           difference carries units
+        z_v0, z_early      the same two, made lot-relative
+        lot_med_v0         lot health: a part drifting at the lot average is
+        lot_med_early      fine, the same drift in a tight lot is not
+        lot_sigma_early
+        early_over_lot     early delta in units of the lot's own spread
+    """
+    if param not in PARAMS:
+        raise KeyError(f"unknown parameter {param!r}")
+    for t in (0, 24):
+        if f"{param}_{t}h" not in df.columns:
+            raise KeyError(f"build_forecast_features needs {param}_{t}h")
+
+    lot = df[lot_col]
+    v0 = transform(df[f"{param}_0h"], param)
+    v24 = transform(df[f"{param}_24h"], param)
+    early = v24 - v0
+
+    lot_sigma_early = early.groupby(lot).transform(robust_sigma)
+    out = pd.DataFrame({
+        "v0": v0,
+        "v24": v24,
+        "early": early,
+        "early_ratio": v24 / v0.replace(0.0, np.nan),
+        "z_v0": v0.groupby(lot).transform(robust_z),
+        "z_early": early.groupby(lot).transform(robust_z),
+        "lot_med_v0": v0.groupby(lot).transform("median"),
+        "lot_med_early": early.groupby(lot).transform("median"),
+        "lot_sigma_early": lot_sigma_early,
+    }, index=df.index)
+    out["early_over_lot"] = early / lot_sigma_early.replace(0.0, np.nan)
+    return out
+
+
+FORECAST_FEATURE_NAMES = [
+    "v0", "v24", "early", "early_ratio", "z_v0", "z_early",
+    "lot_med_v0", "lot_med_early", "lot_sigma_early", "early_over_lot",
+]
 
 
 def lot_reference_table(df: pd.DataFrame, lot_col: str = LOT_COL) -> pd.DataFrame:

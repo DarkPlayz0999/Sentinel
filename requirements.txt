@@ -35,6 +35,8 @@ pydantic==2.9.2            # request/response contracts
 pandera==0.20.4            # dataframe schema contracts at ingest
 streamlit==1.39.0
 reportlab==4.2.5           # one-page signed screening report (PDF)
+python-multipart==0.0.17   # required by FastAPI for the POST /screen upload
 
 # ---- test --------------------------------------------------------------
 pytest==8.3.3
+httpx==0.27.2              # required by fastapi.testclient

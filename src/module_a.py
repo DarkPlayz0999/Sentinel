@@ -152,8 +152,16 @@ def pooled_evidence_score(feat: pd.DataFrame,
 def pooled_evidence_contributions(feat: pd.DataFrame,
                                   axes: tuple[str, ...] = DRIFT_AXES,
                                   one_sided: bool = True) -> pd.DataFrame:
-    """Per-axis terms of ``pooled_evidence_score``. Attribution, for free."""
-    z = feat[list(axes)]
+    """Per-axis terms of ``pooled_evidence_score``. Attribution, for free.
+
+    Returns an empty frame (right index, no columns) when the drift view is
+    absent, so an hour-24 caller gets "no contributions to report" rather than
+    a KeyError. The reason-code engine reads this on every part.
+    """
+    present = [a for a in axes if a in feat.columns]
+    if not present:
+        return pd.DataFrame(index=feat.index)
+    z = feat[present]
     z = z.clip(lower=0) if one_sided else z
     return (z**2).fillna(0.0)
 
@@ -205,7 +213,15 @@ def module_a_scores(df: pd.DataFrame, feat: pd.DataFrame | None = None,
     out = pd.DataFrame(index=df.index)
     out["l1_static"] = static_limit_flags(df)["static_any"].astype(int)
     out["l2_dpat_z"] = dpat_score(feat)
-    out["l3_pooled"] = pooled_evidence_score(feat)
+
+    # L3 needs the drift view, so it is unavailable on an hour-24 frame. Report
+    # NaN there rather than raising: L1 and L2 still have something to say, and
+    # a caller that mistakes a missing layer for a zero score would read the
+    # part as safer than the evidence supports.
+    have_drift = all(a in feat.columns for a in DRIFT_AXES)
+    out["l3_pooled"] = pooled_evidence_score(feat) if have_drift else np.nan
     if with_mahalanobis:
-        out["l3_maha_comparison"] = mahalanobis_score(df)
+        out["l3_maha_comparison"] = (
+            mahalanobis_score(df) if f"{PARAM_NAMES[0]}_168h" in df.columns
+            else np.nan)
     return out

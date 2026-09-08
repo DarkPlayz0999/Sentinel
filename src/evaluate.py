@@ -175,16 +175,44 @@ def screening_metrics(
 
 
 # ------------------------------------------------------------ ranking only
-def pr_auc(y_true, score) -> float:
+TIE_WARN_FRACTION = 0.02
+
+
+def pr_auc(y_true, score, warn_ties: bool = True) -> float:
     """Average precision. Threshold-free ranking quality.
 
     Correct for imbalanced data. ROC-AUC is over-optimistic at this class
     balance because the huge negative pool makes the false-positive rate look
     small however many good parts are scrapped.
+
+    Warns on a large tied block, because average precision FLATTERS a saturating
+    score. A score clipped to 0-100 collapses everything past its ceiling into
+    one operating point, which is then credited with that whole block's average
+    precision instead of being penalised for ordering it badly. Measured on this
+    repo's DPAT score: 0.3889 raw, 0.4825 after clipping at 6 sigma, with 167
+    parts tied at the ceiling - a 0.09 "improvement" from destroying
+    information.
+
+    So: never compare the PR-AUC of a squashed presentation score against an
+    unsquashed one. Rank on the underlying continuous quantity.
     """
     from sklearn.metrics import average_precision_score
     y = _as_arrays(y_true)
     s = np.asarray(score, dtype=float).ravel()
+
+    if warn_ties and s.size:
+        top = s == np.nanmax(s)
+        frac = float(top.mean())
+        if frac > TIE_WARN_FRACTION:
+            import warnings
+            warnings.warn(
+                f"pr_auc: {frac:.1%} of scores are tied at the maximum "
+                f"({int(top.sum())} of {s.size}). Average precision credits a "
+                "tied block with its average precision rather than penalising "
+                "its internal ordering, so this value is inflated and is NOT "
+                "comparable with the PR-AUC of an unsaturated score. Rank on "
+                "the underlying continuous quantity instead.",
+                RuntimeWarning, stacklevel=2)
     return float(average_precision_score(y, s))
 
 
