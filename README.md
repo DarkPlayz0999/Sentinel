@@ -209,25 +209,50 @@ Summarised from `CLAUDE.md`, which is the authority. Read it in full.
 
 ## Baseline to beat
 
-Quoted from blueprint §12, measured on the shipped synthetic dataset (2,100
-parts, 6 lots, 174 latent defects, 63 gross failures). **Not yet reproduced in
-this repo** — run `python src/baseline.py` and confirm before any of these
-reach a slide.
+Measured on the generated dataset (2,100 parts, 6 lots, 174 latent defects, 63
+gross failures). **Reproduced in this repo** — `python src/baseline.py`
+regenerates every figure below through `src/evaluate.py`.
 
 | Method | Recall (latent) | Precision | F₂ | Parts flagged |
 |---|---|---|---|---|
-| Static datasheet limits only | 0.000 | — | 0.000 | 63 (gross only) |
-| Dynamic PAT, robust \|z\| > 8 | 0.414 | 0.533 | 0.433 | 135 (6.4 %) |
-| Dynamic PAT, robust \|z\| > 6 | 0.523 | 0.555 | 0.529 | 164 (7.8 %) |
-| Dynamic PAT, robust \|z\| > 4.5 | 0.638 | 0.514 | 0.609 | 216 (10.3 %) |
+| Static datasheet limits only | 0.000 | — | 0.000 | 55 (2.6 %) |
+| Dynamic PAT, robust \|z\| ≥ 8 | 0.414 | 0.533 | 0.433 | 135 (6.4 %) |
+| Dynamic PAT, robust \|z\| ≥ 6 | 0.523 | 0.555 | 0.529 | 164 (7.8 %) |
+| Dynamic PAT, robust \|z\| ≥ 4.5 | 0.638 | 0.514 | 0.609 | 216 (10.3 %) |
 
-Baseline PR-AUC: 0.389.
+Baseline PR-AUC: 0.3889. The four DPAT rows match blueprint §12 to three
+decimal places, which is what validates `features.py` against the reference
+implementation shipped with the spec.
+
+> **One correction to §12, and it affects the slides.** The blueprint's table
+> records static limits flagging "63 (gross only)". The real count is **55**:
+> eight of the 63 gross parts do not breach any datasheet limit at 168 h — the
+> worst of them reaches 96.9 % of its USL and still ships. Static screening is
+> therefore slightly *worse* than the blueprint claims. The headline number is
+> unaffected: 100 % of latent defects pass static limits, and static limits
+> flag zero non-gross parts.
+
+Recall against the over-rejection budget, measured on healthy parts only
+(flagging a gross failure is correct behaviour, not overkill):
+
+| Overkill budget | Recall |
+|---|---|
+| 1 % | 0.586 |
+| 2 % | 0.638 |
+| 5 % | 0.764 |
+| 10 % | 0.839 |
+| 20 % | 0.874 |
 
 **Target: recall above 0.85 at an overkill rate under 10 %, with every flag
-explained.** Univariate robust z plateaus around 0.65 — roughly a third of
+explained.** Univariate robust z plateaus around 0.84 — roughly a third of
 latent defects are subtle in every single dimension and visible only as a
-combination, so getting past the plateau needs the L3 multivariate layer and the
-curvature feature.
+combination, so getting past the plateau needs the L3 multivariate layer.
+
+The curvature view earns less than the blueprint predicts. It lifts recall at a
+fixed threshold (0.414 → 0.448 at |z| ≥ 8) but leaves PR-AUC unchanged at
+0.3889 to four decimal places, so it reorders nothing — it only shifts where a
+given threshold lands. Treat it as a reason-code signal, not a ranking gain,
+until L3 is in place.
 
 ## Build order
 
