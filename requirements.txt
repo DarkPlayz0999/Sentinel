@@ -1,0 +1,40 @@
+# SENTINEL — pinned dependencies.
+#
+# Resolved and verified against CPython 3.10.6 on Windows (pip --dry-run,
+# 86 packages, all 17 direct pins satisfied exactly). Python >= 3.10 required:
+# scipy 1.14 and pandas 2.2 both drop 3.9.
+#
+#   py -3 -m venv .venv
+#   .venv\Scripts\activate          # Windows
+#   source .venv/bin/activate       # macOS / Linux
+#   pip install -r requirements.txt
+#
+# Pins are exact on purpose. Judges re-run the repo; "it worked on my laptop"
+# is not a defence. Bump deliberately, in a commit of its own.
+
+# ---- core numerics -----------------------------------------------------
+numpy==1.26.4              # 1.x, not 2.x: shap/lightgbm wheels are safest here
+pandas==2.2.3
+scipy==1.14.1              # optimize (power-law fit), stats.chi2 (Mahalanobis)
+
+# ---- models ------------------------------------------------------------
+scikit-learn==1.5.2        # GroupKFold, MinCovDet, IsolationForest, metrics
+lightgbm==4.5.0            # objective="quantile" for the 90th-pct upper bound
+xgboost==2.1.3             # alternative booster for Module A L4
+joblib==1.4.2              # model persistence
+
+# ---- explainability ----------------------------------------------------
+shap==0.46.0               # TreeExplainer + waterfall plots
+matplotlib==3.9.2          # drift-vs-lot-envelope plot, static report figures
+plotly==5.24.1             # interactive dashboard charts
+
+# ---- serving + UI ------------------------------------------------------
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.9.2            # request/response contracts
+pandera==0.20.4            # dataframe schema contracts at ingest
+streamlit==1.39.0
+reportlab==4.2.5           # one-page signed screening report (PDF)
+
+# ---- test --------------------------------------------------------------
+pytest==8.3.3

@@ -1,0 +1,18 @@
+# Teammates are on mixed OSes. Normalise line endings in the repo to LF so a
+# Windows checkout does not produce whole-file diffs against a macOS one.
+* text=auto eol=lf
+
+# Windows-only entry points keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary — never touch, never diff.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.pkl binary
+*.joblib binary
+
+# Generated data is gitignored, but if a small sample is ever committed
+# deliberately, keep it out of diffs and out of language statistics.
+data/** linguist-generated=true
