@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: #E8E9EB;
+  color: #0F1317;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #DEDFE2; }
+::-webkit-scrollbar-thumb { background: #A9AEB6; border: 2px solid #DEDFE2; }
+::-webkit-scrollbar-thumb:hover { background: #12508C; }
+
+@layer components {
+  /* Graph paper. Every panel in this building sits on engineering grid. */
+  .grid-paper {
+    background-image:
+      linear-gradient(rgba(15, 19, 23, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 19, 23, 0.045) 1px, transparent 1px);
+    background-size: 8px 8px;
+  }
+  .grid-paper-lg {
+    background-image:
+      linear-gradient(rgba(15, 19, 23, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 19, 23, 0.05) 1px, transparent 1px),
+      linear-gradient(rgba(15, 19, 23, 0.09) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 19, 23, 0.09) 1px, transparent 1px);
+    background-size: 10px 10px, 10px 10px, 50px 50px, 50px 50px;
+  }
+
+  /* An instrument panel: hard corners, hairline rule, one soft inner light. */
+  .panel {
+    background: #FFFFFF;
+    border: 1px solid #C6C9CF;
+    box-shadow: inset 0 1px 0 #FFFFFF, 0 1px 0 rgba(15, 19, 23, 0.04);
+  }
+  .panel-sunk {
+    background: #F6F6F5;
+    border: 1px solid #C6C9CF;
+    box-shadow: inset 0 1px 3px rgba(15, 19, 23, 0.07);
+  }
+
+  .label {
+    @apply font-mono text-[10px] uppercase tracking-label text-lab-faint;
+  }
+  .readout {
+    @apply font-mono tabular-nums text-lab-ink;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Machined screw head, top corners of a rack panel. */
+  .screw {
+    background: radial-gradient(circle at 35% 32%, #FDFDFD, #B9BDC4 62%, #8E939B);
+    box-shadow: inset 0 0 0 1px rgba(15, 19, 23, 0.14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------- print
+ * The screening report is a paper artefact in a real hi-rel flow: it gets
+ * printed, signed and stapled to a test traveller. Strip the console chrome,
+ * drop to black on white, and keep each numbered block off a page break. */
+.no-print { }
+
+@media print {
+  @page { margin: 12mm; size: A4 portrait; }
+
+  html, body {
+    background: #FFFFFF !important;
+    color: #000000;
+  }
+
+  /* console chrome has no business on a signed record */
+  header.sticky,
+  footer,
+  .no-print {
+    display: none !important;
+  }
+
+  main { padding: 0 !important; max-width: none !important; }
+
+  .print-sheet {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .panel, .panel-sunk {
+    box-shadow: none !important;
+    background: #FFFFFF !important;
+  }
+
+  .grid-paper, .grid-paper-lg { background-image: none !important; }
+
+  section, article, table, li { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+
+  a[href]::after { content: ""; }
+}

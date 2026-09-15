@@ -171,7 +171,7 @@ src/
   report.py                    every number that appears in the deck
   screening_report.py          one-page signed PDF per rejected part
   wafer.py                     wafer map + measured spatial-clustering test
-  module_a.py                  dynamic outlier detection (L1 static, L2 DPAT, L3 multivariate, L4 ensemble)
+  module_a.py                  dynamic outlier detection (L1 static, L2 DPAT, L3 pooled evidence)
   module_b.py                  drift forecast (power law + GBM + quantile bound)
   fusion.py                    0-100 screening risk score, ACCEPT/WATCH/REJECT
   explain.py                   reason codes, SHAP, per-part plots
