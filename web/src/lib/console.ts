@@ -14,7 +14,7 @@
  * exporter would be a second place for them to drift.
  *
  * All data is SIMULATED (seed 42). `meta.simulatedData` carries that flag and
- * the UI surfaces it - see <ProvenanceNote/>.
+ * the UI surfaces it - see <Provenance/> in components/ui/kit.tsx.
  */
 
 import { useEffect, useState } from "react";
@@ -179,6 +179,21 @@ export function robustSigma(xs: number[]): number {
   if (mad > 0) return 1.4826 * mad;
   const iqr = quantile(v, 0.75) - quantile(v, 0.25);
   return iqr > 0 ? iqr / 1.35 : 0;
+}
+
+/**
+ * Upper robust bands (median + k·robust σ) of a lot, in the parameter's own
+ * units. Currents are lognormal (rule 1), so for them the band is computed on
+ * log(x) and mapped back with exp - a raw-unit σ on a lognormal lot is inflated
+ * by the very tail it is meant to expose.
+ */
+export function lotBands(xs: number[], isCurrent: boolean, ks: number[] = [3, 6]) {
+  const v = xs.filter((x) => Number.isFinite(x) && (!isCurrent || x > 0));
+  const t = isCurrent ? v.map(Math.log) : v;
+  const med = median(t);
+  const s = robustSigma(t);
+  const back = (y: number) => (isCurrent ? Math.exp(y) : y);
+  return { median: back(med), bands: ks.map((k) => ({ k, x: back(med + k * s) })) };
 }
 
 export interface Bin { x: number; n: number }

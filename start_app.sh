@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# SENTINEL - start the dashboard and the API.
+# SENTINEL - start the API, the Streamlit dashboard and the web console.
 #
-#   bash start_app.sh          # both, Ctrl-C stops both
+#   bash start_app.sh          # all three, Ctrl-C stops all
 #
-# Dashboard: http://localhost:8501     API docs: http://localhost:8000/docs
+# Web console: http://localhost:3000   API docs: http://localhost:8000/docs
+# Dashboard:   http://localhost:8501
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,4 +19,9 @@ PY="${PY:-python}"
 trap 'kill 0' EXIT
 "$PY" -m uvicorn src.api:app --port 8000 &
 "$PY" -m streamlit run app/dashboard.py --server.port 8501 --server.headless true &
+if [ -d web/node_modules ]; then
+  (cd web && npm run dev -- --port 3000) &
+else
+  echo "web console skipped: run 'cd web && npm install' once to enable it"
+fi
 wait

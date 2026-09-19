@@ -5,58 +5,49 @@
 html { scroll-behavior: smooth; }
 
 body {
-  background: #E8E9EB;
-  color: #0F1317;
+  background: #EEF2F0;
+  color: #14213A;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  font-feature-settings: "tnum" 1;
 }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #DEDFE2; }
-::-webkit-scrollbar-thumb { background: #A9AEB6; border: 2px solid #DEDFE2; }
-::-webkit-scrollbar-thumb:hover { background: #12508C; }
+/* Tabular figures everywhere: columns of readings must line up the way they
+ * do on a tester printout. */
+svg text { font-family: var(--font-sans), ui-sans-serif, sans-serif; font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 2px solid #2B55C9; outline-offset: 2px; }
 
 @layer components {
-  /* Graph paper. Every panel in this building sits on engineering grid. */
-  .grid-paper {
-    background-image:
-      linear-gradient(rgba(15, 19, 23, 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(15, 19, 23, 0.045) 1px, transparent 1px);
-    background-size: 8px 8px;
+  /* Archivo's width axis carries the voice: expanded for display, like a
+   * rating plate riveted to a chamber; condensed for dense column heads. */
+  .wide { font-variation-settings: "wdth" 125; }
+  .narrow { font-variation-settings: "wdth" 82; }
+
+  .card { @apply rounded-card border border-rule bg-sheet; }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-ctl border px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
   }
-  .grid-paper-lg {
-    background-image:
-      linear-gradient(rgba(15, 19, 23, 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(15, 19, 23, 0.05) 1px, transparent 1px),
-      linear-gradient(rgba(15, 19, 23, 0.09) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(15, 19, 23, 0.09) 1px, transparent 1px);
-    background-size: 10px 10px, 10px 10px, 50px 50px, 50px 50px;
+  .btn-primary { @apply btn border-ink bg-ink text-sheet hover:bg-[#23345A]; }
+  .btn-quiet { @apply btn border-rule bg-sheet text-ink hover:bg-well; }
+
+  .input {
+    @apply rounded-ctl border border-rule bg-sheet px-2.5 py-1.5 text-sm text-ink outline-none placeholder:text-mute focus:border-cobalt;
   }
 
-  /* An instrument panel: hard corners, hairline rule, one soft inner light. */
-  .panel {
-    background: #FFFFFF;
-    border: 1px solid #C6C9CF;
-    box-shadow: inset 0 1px 0 #FFFFFF, 0 1px 0 rgba(15, 19, 23, 0.04);
-  }
-  .panel-sunk {
-    background: #F6F6F5;
-    border: 1px solid #C6C9CF;
-    box-shadow: inset 0 1px 3px rgba(15, 19, 23, 0.07);
-  }
+  .link { @apply font-semibold text-cobalt underline-offset-2 hover:underline; }
 
-  .label {
-    @apply font-mono text-[10px] uppercase tracking-label text-lab-faint;
+  code { @apply rounded-[3px] bg-well px-1 py-px font-mono text-[0.88em] text-ink; }
+
+  /* One table style for the whole console. Cells are 13 px, numbers are
+   * right-aligned where the column is numeric (td.n / th.n). */
+  .tbl { @apply w-full border-collapse text-sm; }
+  .tbl th {
+    @apply narrow whitespace-nowrap border-b border-rule bg-well px-3 py-2 text-left text-xs font-semibold text-graphite;
   }
-  .readout {
-    @apply font-mono tabular-nums text-lab-ink;
-    font-variant-numeric: tabular-nums;
-  }
-  /* Machined screw head, top corners of a rack panel. */
-  .screw {
-    background: radial-gradient(circle at 35% 32%, #FDFDFD, #B9BDC4 62%, #8E939B);
-    box-shadow: inset 0 0 0 1px rgba(15, 19, 23, 0.14);
-  }
+  .tbl td { @apply border-b border-hair px-3 py-1.5 align-middle; }
+  .tbl tbody tr:hover { @apply bg-well; }
+  .tbl .n { @apply text-right; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -65,47 +56,29 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  html { scroll-behavior: auto; }
 }
 
 /* ---------------------------------------------------------------- print
- * The screening report is a paper artefact in a real hi-rel flow: it gets
- * printed, signed and stapled to a test traveller. Strip the console chrome,
- * drop to black on white, and keep each numbered block off a page break. */
-.no-print { }
-
+ * The screening report is a paper artefact in a real hi-rel flow: printed,
+ * signed and stapled to a test traveller. Strip the console chrome, drop to
+ * black on white, keep each numbered block off a page break. */
 @media print {
   @page { margin: 12mm; size: A4 portrait; }
-
-  html, body {
-    background: #FFFFFF !important;
-    color: #000000;
-  }
-
-  /* console chrome has no business on a signed record */
-  header.sticky,
-  footer,
-  .no-print {
-    display: none !important;
-  }
-
+  html, body { background: #FFFFFF !important; }
+  .no-print { display: none !important; }
   main { padding: 0 !important; max-width: none !important; }
-
-  .print-sheet {
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    max-width: none !important;
-  }
-
-  .panel, .panel-sunk {
-    box-shadow: none !important;
-    background: #FFFFFF !important;
-  }
-
-  .grid-paper, .grid-paper-lg { background-image: none !important; }
-
-  section, article, table, li { break-inside: avoid; }
+  .print-sheet { border: none !important; padding: 0 !important; max-width: none !important; }
+  section, table, li { break-inside: avoid; }
   h1, h2, h3 { break-after: avoid; }
-
-  a[href]::after { content: ""; }
 }
+
+/* The one orchestrated moment on the site: the hero lot settles into place,
+ * column by column, then the component under the limit is marked. Transform
+ * and opacity only. Reduced motion gets the final frame. */
+@media (prefers-reduced-motion: no-preference) {
+  .settle circle { animation: settle 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both; }
+  .settle-last { animation: mark 480ms ease-out 1250ms both; }
+}
+@keyframes settle { from { opacity: 0; transform: translateY(-18px); } }
+@keyframes mark { from { opacity: 0; } }

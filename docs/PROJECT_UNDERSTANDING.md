@@ -1,3 +1,7 @@
+> **Historical snapshot (2026-09-14).** Written before the backend upgrade; several
+> findings below (R-101 explanation gap, per-request retraining, unused dependencies)
+> have since been fixed. See `docs/BACKEND_UPGRADE.md` and the git log for current state.
+
 # SENTINEL — PROJECT UNDERSTANDING REPORT
 
 **SIH 2026 · PS SIH26170 · ISRO · AI-Driven Anomaly Detection in Component Burn-In & Screening**

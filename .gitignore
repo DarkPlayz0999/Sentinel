@@ -4,10 +4,11 @@
 data/*
 !data/.gitkeep
 
-# model artefacts + generated reports
-models/
-artifacts/
-reports/
+# model artefacts + generated reports. Anchored to the root: an unanchored
+# `models/` also swallowed backend/app/models/, the ORM package the API imports.
+/models/
+/artifacts/
+/reports/
 *.pkl
 *.joblib
 *.onnx
@@ -62,8 +63,8 @@ web/node_modules/
 web/.next/
 web/out/
 web/next-env.d.ts
+web/*.tsbuildinfo
 
 # Runtime state: SQLite database, uploaded datasets, model artifacts.
 # Regenerable with `python -m backend.train`; never a source of truth.
 var/
-reports/

@@ -5,40 +5,38 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { ConsoleState } from "@/components/console/shell";
 import { PartDetail } from "@/components/console/detail";
-import {
-  Meter, Panel, PanelHead, ProvenanceNote, SectionHead, VerdictChip, num, pct, unit,
-} from "@/components/ui/kit";
+import { Card, PageHead, Provenance, Risk, Stamp, num, unit } from "@/components/ui/kit";
 import { Part, Verdict, useConsole } from "@/lib/console";
 import { cn } from "@/lib/utils";
 
-/* COMPONENTS — the dense engineering table.
+/* COMPONENTS - the dense engineering register.
  *
- * One row per part, not one card per part. A reliability engineer scans a
- * hundred rows looking for the two that matter; cards would put eight on a
- * screen. Row height is 26 px, numbers are tabular, and the table scrolls
- * horizontally on narrow viewports rather than reflowing into unusable cards. */
+ * One row per part, not one card per part: an engineer scans a hundred rows
+ * for the two that matter, and cards would put eight on a screen. The table
+ * scrolls sideways on narrow viewports rather than reflowing into cards. */
 
 type SortKey = "r" | "l2" | "wr" | "s" | "v168";
 
 function Th({
-  label, sortKey, active, dir, onSort, align = "left", width,
+  label, sortKey, sort, onSort, numeric,
 }: {
-  label: string; sortKey?: SortKey; active?: boolean; dir?: 1 | -1;
-  onSort?: (k: SortKey) => void; align?: "left" | "right"; width?: string;
+  label: string; sortKey?: SortKey; sort: { k: SortKey; dir: 1 | -1 };
+  onSort: (k: SortKey) => void; numeric?: boolean;
 }) {
+  const active = sortKey !== undefined && sort.k === sortKey;
   return (
     <th
-      style={width ? { width } : undefined}
-      className={cn(
-        "sticky top-0 z-10 whitespace-nowrap border-b border-lab-rule bg-lab-panel px-2.5 py-2 font-mono text-[9px] uppercase tracking-label text-lab-faint",
-        align === "right" ? "text-right" : "text-left",
-        sortKey && "cursor-pointer select-none hover:text-lab-ink"
-      )}
-      onClick={sortKey && onSort ? () => onSort(sortKey) : undefined}
-      aria-sort={active ? (dir === -1 ? "descending" : "ascending") : undefined}
+      className={cn("sticky top-0 z-10", numeric && "n")}
+      aria-sort={active ? (sort.dir === -1 ? "descending" : "ascending") : undefined}
     >
-      {label}
-      {active && <span className="ml-1 text-lab-ink">{dir === -1 ? "▾" : "▴"}</span>}
+      {sortKey ? (
+        <button onClick={() => onSort(sortKey)} className={cn("hover:text-ink", active && "text-ink")}>
+          {label}
+          <span aria-hidden className="ml-1">{active ? (sort.dir === -1 ? "↓" : "↑") : ""}</span>
+        </button>
+      ) : (
+        label
+      )}
     </th>
   );
 }
@@ -63,7 +61,7 @@ function Inner() {
       if (needle && !p.s.toUpperCase().includes(needle)) return false;
       if (lot !== "ALL" && p.l !== lot) return false;
       if (verdict !== "ALL" && p.v !== verdict) return false;
-      // "escape" = passes every static limit but the screen flags it. The
+      // An escape passes every static limit but the screen flags it - the
       // population this project exists to catch.
       if (escapesOnly && !(p.st === 0 && p.v !== "ACCEPT")) return false;
       return true;
@@ -72,9 +70,7 @@ function Inner() {
       sort.k === "s" ? p.s : sort.k === "v168" ? (p.m[pi][3] ?? -Infinity) : (p[sort.k] ?? -Infinity);
     return out.sort((a, b) => {
       const x = val(a), y = val(b);
-      if (typeof x === "string" || typeof y === "string") {
-        return String(x).localeCompare(String(y)) * sort.dir;
-      }
+      if (typeof x === "string" || typeof y === "string") return String(x).localeCompare(String(y)) * sort.dir;
       return ((x as number) - (y as number)) * sort.dir;
     });
   }, [data, q, lot, verdict, escapesOnly, sort, pi]);
@@ -84,132 +80,89 @@ function Inner() {
   const part = selected ? data.parts.find((p) => p.s === selected) : undefined;
   if (selected && !part) {
     return (
-      <Panel className="p-6">
-        <p className="font-mono text-[11px] text-lab-dim">
-          No component with serial <span className="readout text-lab-ink">{selected}</span> in this
-          screening run.{" "}
-          <Link href="/console/components" className="text-sig-blue hover:underline">
-            Back to the register
-          </Link>
-          .
+      <Card className="p-6">
+        <p className="text-base">
+          No component with serial <strong>{selected}</strong> in this screening run.
         </p>
-      </Panel>
+        <Link href="/console/components" className="link mt-2 inline-block">Back to all components</Link>
+      </Card>
     );
   }
   if (part) return <PartDetail part={part} data={data} />;
 
   const { meta } = data;
   const pm = meta.params[pi];
-  const setSortKey = (k: SortKey) =>
+  const onSort = (k: SortKey) =>
     setSort((s) => (s.k === k ? { k, dir: s.dir === -1 ? 1 : -1 } : { k, dir: -1 }));
-
   const escapes = data.parts.filter((p) => p.st === 0 && p.v !== "ACCEPT").length;
+  const filtered = q || lot !== "ALL" || verdict !== "ALL" || escapesOnly;
 
   return (
-    <div className="space-y-5">
-      <SectionHead
-        index="10"
-        title="Component register"
-        note={`${rows.length.toLocaleString()} of ${data.parts.length.toLocaleString()} components shown`}
+    <>
+      <PageHead
+        title="Components"
+        lede={`Every screened part, highest risk first. ${rows.length.toLocaleString()} of ${data.parts.length.toLocaleString()} shown.`}
       />
 
       {/* ---------------------------------------------------- filter bar */}
-      <Panel className="flex flex-wrap items-end gap-x-4 gap-y-3 px-3 py-2.5">
-        <label className="min-w-[150px] flex-1">
-          <span className="label mb-1 block">Search serial</span>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="L04-0348"
-            className="readout w-full border border-lab-rule bg-lab-card px-2 py-1.5 text-[11px] text-lab-ink outline-none placeholder:text-lab-faint focus:border-sig-blue"
-          />
+      <Card className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-3 px-4 py-3">
+        <label className="min-w-[160px] flex-1">
+          <span className="mb-1 block text-xs text-graphite">Search serial</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="L04-0348" className="input w-full" />
         </label>
-
         <label>
-          <span className="label mb-1 block">Lot</span>
-          <select
-            value={lot}
-            onChange={(e) => setLot(e.target.value)}
-            className="readout border border-lab-rule bg-lab-card px-2 py-1.5 text-[11px] text-lab-ink outline-none focus:border-sig-blue"
-          >
-            <option value="ALL">ALL</option>
-            {data.lots.map((l) => (
-              <option key={l.lot} value={l.lot}>{l.lot}</option>
-            ))}
+          <span className="mb-1 block text-xs text-graphite">Lot</span>
+          <select value={lot} onChange={(e) => setLot(e.target.value)} className="input">
+            <option value="ALL">All lots</option>
+            {data.lots.map((l) => <option key={l.lot} value={l.lot}>{l.lot}</option>)}
           </select>
         </label>
-
         <label>
-          <span className="label mb-1 block">Decision</span>
-          <select
-            value={verdict}
-            onChange={(e) => setVerdict(e.target.value as Verdict | "ALL")}
-            className="readout border border-lab-rule bg-lab-card px-2 py-1.5 text-[11px] text-lab-ink outline-none focus:border-sig-blue"
-          >
-            {["ALL", "REJECT", "WATCH", "ACCEPT"].map((v) => (
-              <option key={v} value={v}>{v}</option>
-            ))}
+          <span className="mb-1 block text-xs text-graphite">Decision</span>
+          <select value={verdict} onChange={(e) => setVerdict(e.target.value as Verdict | "ALL")} className="input">
+            <option value="ALL">All decisions</option>
+            <option value="REJECT">Reject</option>
+            <option value="WATCH">Watch</option>
+            <option value="ACCEPT">Accept</option>
           </select>
         </label>
-
         <label>
-          <span className="label mb-1 block">Parameter shown</span>
-          <select
-            value={pi}
-            onChange={(e) => setPi(Number(e.target.value))}
-            className="readout border border-lab-rule bg-lab-card px-2 py-1.5 text-[11px] text-lab-ink outline-none focus:border-sig-blue"
-          >
-            {meta.params.map((p, i) => (
-              <option key={p.name} value={i}>{p.name}</option>
-            ))}
+          <span className="mb-1 block text-xs text-graphite">Readings shown</span>
+          <select value={pi} onChange={(e) => setPi(Number(e.target.value))} className="input">
+            {meta.params.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}
           </select>
         </label>
-
-        <label className="flex cursor-pointer items-center gap-2 pb-1.5">
-          <input
-            type="checkbox"
-            checked={escapesOnly}
-            onChange={(e) => setEscapesOnly(e.target.checked)}
-            className="h-3.5 w-3.5 accent-sig-red"
-          />
-          <span className="font-mono text-[10px] text-lab-ink">
-            Escapes only
-            <span className="ml-1.5 text-lab-faint">
-              (static PASS, SENTINEL flags — {escapes})
-            </span>
-          </span>
+        <label className="flex cursor-pointer items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" checked={escapesOnly} onChange={(e) => setEscapesOnly(e.target.checked)}
+            className="h-4 w-4 accent-reject" />
+          Escapes only <span className="text-graphite">({escapes})</span>
         </label>
-
-        {(q || lot !== "ALL" || verdict !== "ALL" || escapesOnly) && (
+        {filtered && (
           <button
             onClick={() => { setQ(""); setLot("ALL"); setVerdict("ALL"); setEscapesOnly(false); }}
-            className="ml-auto border border-lab-rule bg-lab-card px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-label text-lab-dim hover:bg-lab-panel"
+            className="btn-quiet ml-auto"
           >
             Clear filters
           </button>
         )}
-      </Panel>
+      </Card>
 
       {/* -------------------------------------------------------- table */}
-      <Panel className="overflow-x-auto">
-        <PanelHead
-          title={`Screened components — ${pm.name}`}
-          meta={`readings in ${unit(pm.unit)} · USL ${pm.usl} ${unit(pm.unit)} · sorted by ${sort.k}`}
-        />
-        <table className="w-full min-w-[980px] border-collapse">
+      <Card className="overflow-x-auto">
+        <table className="tbl min-w-[1000px]">
           <thead>
             <tr>
-              <Th label="Component" sortKey="s" active={sort.k === "s"} dir={sort.dir} onSort={setSortKey} width="118px" />
-              <Th label="Lot" width="54px" />
-              <Th label="0 h" align="right" />
-              <Th label="24 h" align="right" />
-              <Th label="96 h" align="right" />
-              <Th label="168 h" sortKey="v168" active={sort.k === "v168"} dir={sort.dir} onSort={setSortKey} align="right" />
-              <Th label="Dynamic σ" sortKey="l2" active={sort.k === "l2"} dir={sort.dir} onSort={setSortKey} align="right" />
-              <Th label="Predicted drift" sortKey="wr" active={sort.k === "wr"} dir={sort.dir} onSort={setSortKey} align="right" />
-              <Th label="Static" width="64px" />
-              <Th label="Risk" sortKey="r" active={sort.k === "r"} dir={sort.dir} onSort={setSortKey} width="130px" />
-              <Th label="Decision" width="104px" />
+              <Th label="Component" sortKey="s" sort={sort} onSort={onSort} />
+              <Th label="Lot" sort={sort} onSort={onSort} />
+              <Th label={`${pm.name} 0 h`} sort={sort} onSort={onSort} numeric />
+              <Th label="24 h" sort={sort} onSort={onSort} numeric />
+              <Th label="96 h" sort={sort} onSort={onSort} numeric />
+              <Th label="168 h" sortKey="v168" sort={sort} onSort={onSort} numeric />
+              <Th label="Lot deviation" sortKey="l2" sort={sort} onSort={onSort} numeric />
+              <Th label="Slope ratio" sortKey="wr" sort={sort} onSort={onSort} numeric />
+              <Th label="Datasheet" sort={sort} onSort={onSort} />
+              <Th label="Risk" sortKey="r" sort={sort} onSort={onSort} />
+              <Th label="Decision" sort={sort} onSort={onSort} />
             </tr>
           </thead>
           <tbody>
@@ -218,77 +171,23 @@ function Inner() {
               const breach = v168 !== null && v168 > pm.usl;
               const escape = p.st === 0 && p.v !== "ACCEPT";
               return (
-                <tr
-                  key={p.s}
-                  className={cn(
-                    "border-b border-lab-hair hover:bg-lab-panel",
-                    escape && "bg-sig-red/[0.025]"
-                  )}
-                >
-                  <td className="px-2.5 py-[5px]">
-                    <Link
-                      href={`/console/components?id=${p.s}`}
-                      className="readout text-[11px] font-semibold text-sig-blue hover:underline"
-                    >
-                      {p.s}
-                    </Link>
-                  </td>
-                  <td className="readout px-2.5 py-[5px] text-[10px] text-lab-dim">{p.l}</td>
+                <tr key={p.s} className={cn(escape && "bg-reject/[0.03]")}>
+                  <td><Link href={`/console/components?id=${p.s}`} className="link">{p.s}</Link></td>
+                  <td className="text-graphite">{p.l}</td>
                   {[0, 1, 2].map((ri) => (
-                    <td key={ri} className="readout px-2.5 py-[5px] text-right text-[10px] text-lab-dim">
-                      {num(p.m[pi][ri], 2)}
-                    </td>
+                    <td key={ri} className="n text-graphite">{num(p.m[pi][ri], 2)}</td>
                   ))}
-                  <td
-                    className={cn(
-                      "readout px-2.5 py-[5px] text-right text-[10px] font-semibold",
-                      breach ? "text-sig-red" : "text-lab-ink"
-                    )}
-                  >
-                    {num(v168, 2)}
-                  </td>
-                  <td
-                    className={cn(
-                      "readout px-2.5 py-[5px] text-right text-[10px] font-semibold",
-                      p.l2 >= 6 ? "text-sig-red" : p.l2 >= 4.5 ? "text-sig-amber" : "text-lab-dim"
-                    )}
-                  >
+                  <td className={cn("n font-semibold", breach && "text-reject")}>{num(v168, 2)}</td>
+                  <td className={cn("n font-semibold",
+                    p.l2 >= 6 ? "text-reject" : p.l2 >= 4.5 ? "text-watch" : "text-graphite")}>
                     {num(p.l2, 2)}σ
                   </td>
-                  <td
-                    className={cn(
-                      "readout px-2.5 py-[5px] text-right text-[10px]",
-                      p.wr !== null && p.wr > 1 ? "text-sig-red" : "text-lab-dim"
-                    )}
-                  >
+                  <td className={cn("n", p.wr !== null && p.wr > 1 ? "text-reject" : "text-graphite")}>
                     {p.wr === null ? "—" : `${num(p.wr, 2)}×`}
                   </td>
-                  <td className="px-2.5 py-[5px]">
-                    <span
-                      className={cn(
-                        "font-mono text-[9px] font-bold uppercase tracking-label",
-                        p.st ? "text-sig-red" : "text-sig-green"
-                      )}
-                    >
-                      {p.st ? "BREACH" : "PASS"}
-                    </span>
-                  </td>
-                  <td className="px-2.5 py-[5px]">
-                    <div className="flex items-center gap-2">
-                      <span className="readout w-8 text-[10px] font-semibold">{num(p.r, 1)}</span>
-                      <span className="w-[72px]">
-                        <Meter
-                          value={p.r}
-                          max={100}
-                          height={4}
-                          color={p.v === "REJECT" ? "#A81E12" : p.v === "WATCH" ? "#9A5B06" : "#186B45"}
-                        />
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-2.5 py-[5px]">
-                    <VerdictChip v={p.v} />
-                  </td>
+                  <td><Stamp v={p.st ? "BREACH" : "PASS"} /></td>
+                  <td><Risk r={p.r} v={p.v} /></td>
+                  <td><Stamp v={p.v} /></td>
                 </tr>
               );
             })}
@@ -296,30 +195,30 @@ function Inner() {
         </table>
 
         {rows.length === 0 && (
-          <p className="px-4 py-6 text-center font-mono text-[10px] text-lab-faint">
-            No component matches these filters.
-          </p>
-        )}
-        {rows.length > limit && (
-          <div className="border-t border-lab-hair px-3 py-2.5 text-center">
-            <button
-              onClick={() => setLimit((l) => l + 300)}
-              className="border border-lab-rule bg-lab-card px-3 py-1.5 font-mono text-[10px] uppercase tracking-label text-lab-ink hover:bg-lab-panel"
-            >
-              Show 300 more — {(rows.length - limit).toLocaleString()} remaining
+          <div className="px-4 py-8 text-center text-sm text-graphite">
+            No component matches these filters.{" "}
+            <button onClick={() => { setQ(""); setLot("ALL"); setVerdict("ALL"); setEscapesOnly(false); }} className="link">
+              Clear filters
             </button>
           </div>
         )}
-      </Panel>
+        {rows.length > limit && (
+          <div className="border-t border-hair px-4 py-3 text-center">
+            <button onClick={() => setLimit((l) => l + 300)} className="btn-quiet">
+              Show 300 more ({(rows.length - limit).toLocaleString()} left)
+            </button>
+          </div>
+        )}
+      </Card>
 
-      <p className="font-mono text-[9px] leading-relaxed text-lab-faint">
-        Rows tinted red are <span className="font-bold text-lab-dim">escapes</span>: components
-        that pass every static datasheet limit at 168 h and would ship under traditional
-        screening, but which SENTINEL flags as abnormal relative to their own lot.
+      <p className="mt-3 max-w-prose text-sm text-graphite">
+        Readings are in {unit(pm.unit)}; the datasheet limit is {pm.usl} {unit(pm.unit)}. Tinted
+        rows are escapes: parts that pass every datasheet limit at 168 h and would ship under
+        traditional screening, but which SENTINEL flags against their own lot.
       </p>
 
-      <ProvenanceNote modelVersion={meta.modelVersion} source={meta.generatedFrom} />
-    </div>
+      <Provenance modelVersion={meta.modelVersion} source={meta.generatedFrom} />
+    </>
   );
 }
 

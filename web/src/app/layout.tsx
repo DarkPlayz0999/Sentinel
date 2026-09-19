@@ -1,30 +1,26 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Archivo } from "next/font/google";
 import "./globals.css";
 
-const sans = IBM_Plex_Sans({
+// One variable family. The width axis does the work a second typeface would:
+// expanded for display, normal for reading, condensed for column heads.
+const archivo = Archivo({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  axes: ["wdth"],
   variable: "--font-sans",
-  display: "swap",
-});
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "SENTINEL — Component Reliability Lab",
+  title: "SENTINEL — Burn-in screening",
   description:
-    "A live burn-in screening facility: measure, compare against the lot, detect, forecast 168 h from 24 h, explain, decide.",
+    "Find the burn-in components that pass every datasheet limit but are abnormal in their own lot, forecast drift from the first 24 hours, and give every rejection a reason an inspector can check.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body className="bg-lab-floor font-sans text-lab-ink antialiased">{children}</body>
+    <html lang="en" className={archivo.variable}>
+      <body className="bg-paper font-sans text-base text-ink antialiased">{children}</body>
     </html>
   );
 }

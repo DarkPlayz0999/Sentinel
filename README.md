@@ -122,6 +122,13 @@ streamlit run app/dashboard.py
 uvicorn src.api:app --reload
 ```
 
+Web console (needs Node 18+; reads the export, so run the exporter after regenerating data):
+
+```bash
+python web/scripts/export_lab_data.py
+cd web && npm install && npm run dev      # http://localhost:3000
+```
+
 ## Generated data
 
 `src/generate_burnin_dataset.py` produces 2,100 parts across 6 lots, 4
@@ -160,7 +167,7 @@ of all hackathon merge conflicts are column names.
 ## Repo layout
 
 ```
-src/
+src/                           the screening science - one definition of everything
   generate_burnin_dataset.py   synthetic data, fixed seed, DO NOT change the seed
   baseline.py                  the hour-6 checkpoint; stays in the repo forever
   features.py                  the ONLY place features are defined
@@ -176,13 +183,22 @@ src/
   fusion.py                    0-100 screening risk score, ACCEPT/WATCH/REJECT
   explain.py                   reason codes, SHAP, per-part plots
   evaluate.py                  THE scorer. One scorer, one truth.
-  api.py                       FastAPI service
+  api.py                       entry-point shim: `uvicorn src.api:app` -> backend/app/main.py
+backend/                       FastAPI service: persistence, jobs, audit trail, /v1 API
+  app/                         routes, services, repositories, models, schemas
+  train.py                     train and register the forecaster once
+web/                           Next.js web console (static export)
+  src/app/                     landing page + /console/{screen,lots,components,analysis,reports}
+  src/components/              ui/ primitives, charts/, console/, site/ (landing)
+  src/lib/                     data loaders; lab-data.ts is generated, never hand-edited
+  scripts/export_lab_data.py   writes lab-data.ts, public/data/console.json, public/samples/
 app/
-  dashboard.py                 Streamlit QA-inspector dashboard
+  dashboard.py                 Streamlit QA-inspector dashboard (Python-only fallback)
 data/                          generated CSVs (gitignored)
-tests/                         150 tests
-docs/
+tests/                         pytest suite
+docs/                          blueprints, slide blueprint, historical audits
 run_demo.sh                    one-command demo
+start_app.sh                   API + Streamlit dashboard + web console
 ```
 
 All of it is implemented and tested. The pipeline runs end to end from an

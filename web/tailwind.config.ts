@@ -1,48 +1,29 @@
 import type { Config } from "tailwindcss";
+import { C } from "./src/lib/theme";
 
 const config: Config = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
-      colors: {
-        // Instrument panel palette. Light, matte, no glow - this is a lab,
-        // not a spaceship bridge.
-        lab: {
-          floor: "#E8E9EB",
-          panel: "#F6F6F5",
-          card: "#FFFFFF",
-          sunk: "#DEDFE2",
-          rule: "#C6C9CF",
-          hair: "#E1E3E6",
-          ink: "#0F1317",
-          dim: "#59616D",
-          faint: "#8C939E",
-        },
-        sig: {
-          blue: "#12508C",
-          green: "#186B45",
-          amber: "#9A5B06",
-          red: "#A81E12",
-        },
-      },
+      colors: C,
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
-      letterSpacing: { label: "0.14em" },
-      animation: {
-        "led": "led 2.4s ease-in-out infinite",
-        "shimmer": "shimmer 3.2s ease-in-out infinite",
-        "trace": "trace 2.6s linear infinite",
+      // 15 px body, ~1.25 steps. Nothing in the product is set below 12 px.
+      fontSize: {
+        xs: ["12px", "16px"],
+        sm: ["13px", "19px"],
+        base: ["15px", "24px"],
+        lg: ["18px", "26px"],
+        xl: ["22px", "28px"],
+        "2xl": ["28px", "32px"],
+        "3xl": ["36px", "40px"],
+        "4xl": ["48px", "50px"],
+        "5xl": ["62px", "62px"],
       },
-      keyframes: {
-        led: { "0%,100%": { opacity: "1" }, "50%": { opacity: "0.35" } },
-        shimmer: {
-          "0%,100%": { transform: "translateY(0) scaleX(1)", opacity: "0.5" },
-          "50%": { transform: "translateY(-6px) scaleX(1.04)", opacity: "0.9" },
-        },
-        trace: { "0%": { strokeDashoffset: "40" }, "100%": { strokeDashoffset: "0" } },
-      },
+      borderRadius: { card: "6px", ctl: "4px" },
+      maxWidth: { prose: "68ch" },
     },
   },
   plugins: [],

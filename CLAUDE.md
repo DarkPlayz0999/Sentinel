@@ -77,6 +77,8 @@ src/
   evaluate.py                  THE scorer. One scorer, one truth.
   api.py                       FastAPI service
 app/                           Streamlit dashboard
+backend/                       FastAPI service layer (src/api.py is a shim onto it)
+web/                           Next.js web console - the primary frontend
 data/                          generated CSVs (gitignored)
 tests/
 docs/
@@ -89,6 +91,8 @@ python src/generate_burnin_dataset.py    # regenerate data (seed 42, reproducibl
 python -m pytest tests/ -q
 streamlit run app/dashboard.py
 uvicorn src.api:app --reload
+python web/scripts/export_lab_data.py      # refresh the web console's data
+cd web && npm run dev                      # web console on :3000
 ```
 
 Windows: use `python`, not `python3`. Paths use `pathlib.Path`, never
