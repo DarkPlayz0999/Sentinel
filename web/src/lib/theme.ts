@@ -2,22 +2,25 @@
  * (text-ink, bg-paper, ...) and the SVG charts import it for fills, so a
  * colour change is one edit here.
  *
- * Drafting-film paper, Prussian ink, and three stamp inks. Colour carries
- * STATUS and the lot population, nothing else. */
+ * "The oven window": aluminium chamber walls, circuit-board green for text,
+ * copper for time and anything you can drag, steel blue for the batch, and
+ * three verdict inks that always travel with a shape. */
 
 export const C = {
-  paper: "#EEF2F0",    // page - cool vellum
+  paper: "#EEF1F4",    // page - brushed aluminium
   sheet: "#FFFFFF",    // surfaces
-  well: "#F5F7F6",     // recessed areas, table heads, hover
-  rule: "#D2D9D6",     // borders
-  hair: "#E3E8E6",     // row dividers
-  ink: "#14213A",      // text, primary action
-  graphite: "#566174", // secondary text
-  mute: "#7B8596",     // tertiary text, axis labels
-  cobalt: "#2B55C9",   // the lot population, links, focus
-  pass: "#1B7549",
-  watch: "#A6670A",
-  reject: "#C22A1D",
+  well: "#F4F6F8",     // recessed areas, table heads, hover
+  rule: "#D3D9DF",     // borders
+  hair: "#E4E8EC",     // row dividers
+  ink: "#0E3B36",      // text, primary action - solder-mask green
+  graphite: "#4B5A5F", // secondary text
+  mute: "#6F7C80",     // tertiary text, axis labels
+  cobalt: "#3B78A6",   // the batch (lot population), links, focus
+  copper: "#9C4F1F",   // time and interactive handles only
+  oven: "#0B2D2A",     // the one dark panel: the oven window
+  pass: "#1D7A55",
+  watch: "#9A6A00",
+  reject: "#C8322A",
 } as const;
 
 export const VERDICT_COLOR = {

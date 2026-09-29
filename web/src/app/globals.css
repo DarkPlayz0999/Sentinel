@@ -5,8 +5,8 @@
 html { scroll-behavior: smooth; }
 
 body {
-  background: #EEF2F0;
-  color: #14213A;
+  background: #EEF1F4;
+  color: #0E3B36;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "tnum" 1;
 }
@@ -15,20 +15,21 @@ body {
  * do on a tester printout. */
 svg text { font-family: var(--font-sans), ui-sans-serif, sans-serif; font-variant-numeric: tabular-nums; }
 
-:focus-visible { outline: 2px solid #2B55C9; outline-offset: 2px; }
+:focus-visible { outline: 3px solid #9C4F1F; outline-offset: 2px; border-radius: 2px; }
 
 @layer components {
-  /* Archivo's width axis carries the voice: expanded for display, like a
-   * rating plate riveted to a chamber; condensed for dense column heads. */
-  .wide { font-variation-settings: "wdth" 125; }
-  .narrow { font-variation-settings: "wdth" 82; }
+  /* Display voice: Bricolage Grotesque, slightly condensed so long plain-
+   * language headings still sit on two lines. `.narrow` stays for dense
+   * column heads in the body face. */
+  .wide { font-family: var(--font-display), var(--font-sans), sans-serif; font-variation-settings: "wdth" 92; letter-spacing: -0.015em; }
+  .narrow { letter-spacing: 0.01em; }
 
   .card { @apply rounded-card border border-rule bg-sheet; }
 
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-ctl border px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
   }
-  .btn-primary { @apply btn border-ink bg-ink text-sheet hover:bg-[#23345A]; }
+  .btn-primary { @apply btn border-ink bg-ink text-sheet hover:bg-[#15514A]; }
   .btn-quiet { @apply btn border-rule bg-sheet text-ink hover:bg-well; }
 
   .input {
@@ -36,6 +37,23 @@ svg text { font-family: var(--font-sans), ui-sans-serif, sans-serif; font-varian
   }
 
   .link { @apply font-semibold text-cobalt underline-offset-2 hover:underline; }
+
+  /* Range input: a copper handle with a 44 px touch target. Copper means
+   * "you can move this" everywhere on the site. */
+  .range { @apply h-11 w-full cursor-pointer appearance-none bg-transparent; }
+  .range::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: var(--track, #D3D9DF); }
+  .range::-moz-range-track { height: 6px; border-radius: 999px; background: #D3D9DF; }
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; margin-top: -11px;
+    height: 28px; width: 28px; border-radius: 999px;
+    background: #9C4F1F; border: 4px solid #FFFFFF; box-shadow: 0 0 0 1px #9C4F1F;
+  }
+  .range::-moz-range-thumb { height: 22px; width: 22px; border-radius: 999px; background: #9C4F1F; border: 4px solid #FFFFFF; }
+  .range:focus-visible { outline-offset: 4px; }
+
+  /* A toggle chip: pressed state is visible without colour (filled + tick). */
+  .chip { @apply inline-flex min-h-[44px] items-center gap-2 rounded-full border border-rule bg-sheet px-4 text-sm font-bold text-ink transition-colors hover:border-ink; }
+  .chip[aria-pressed="true"] { @apply border-ink bg-ink text-sheet; }
 
   code { @apply rounded-[3px] bg-well px-1 py-px font-mono text-[0.88em] text-ink; }
 
@@ -82,3 +100,18 @@ svg text { font-family: var(--font-sans), ui-sans-serif, sans-serif; font-varian
 }
 @keyframes settle { from { opacity: 0; transform: translateY(-18px); } }
 @keyframes mark { from { opacity: 0; } }
+
+/* Hero: the chip's week draws itself, its readings pop in, then SENTINEL's
+ * verdict lands. Replays on every chip switch. Reduced motion: final frame. */
+@media (prefers-reduced-motion: no-preference) {
+  .draw { stroke-dasharray: 1; animation: draw 1100ms cubic-bezier(0.3, 0.7, 0.3, 1) both; }
+  .pop { animation: mark 300ms ease-out 900ms both; }
+  .pop-late { animation: land 380ms cubic-bezier(0.2, 0.9, 0.3, 1.2) 1000ms both; }
+}
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .tray-fill { animation: mark 240ms ease-out both; }
+  .grow-in { transform-origin: left; animation: grow 700ms cubic-bezier(0.3, 0.7, 0.3, 1) both; }
+}
+@keyframes grow { from { transform: scaleX(0); } }
+@keyframes land { from { opacity: 0; transform: translateY(6px) scale(0.96); } }

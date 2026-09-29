@@ -1,135 +1,201 @@
+"use client";
+
 import Link from "next/link";
-import { LAB } from "@/lib/lab-data";
-import { unit } from "@/components/ui/kit";
+import { useMemo, useState } from "react";
+import { Term } from "@/components/ui/term";
+import { ConsoleData, Part, median, robustSigma, useConsole } from "@/lib/console";
 import { C } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
-/* HERO.
+/* HERO - one chip at a time, two tests side by side.
  *
- * The argument of the whole project in one picture: lot L04 at 168 h, one dot
- * per component, piled up around its median - and one component far out on
- * its own, sitting just under the datasheet limit. Every dot is a real part
- * from the screened dataset (LAB.hero.lotHist, 1.25 µA bins, exported by
- * web/scripts/export_lab_data.py). The one animation on the site is the lot
- * settling into place; reduced motion gets the final frame. */
+ * Three real chips from batch L04 (simulated dataset, console.json): a healthy
+ * one, an obvious failure, and a hidden defect. Both tests agree on the first
+ * two. Only the hidden defect splits them - which is the whole idea, learned
+ * in one click. Every value, band and verdict is read from the screened data. */
 
-const H = LAB.hero;
-const U = unit(H.unit);
-type Bin = { readonly x: number; readonly n: number };
+const LOT = "L04";
+const USL = 50;
+const HOURS = [0, 24, 96, 168];
+const EXAMPLES = [
+  { serial: "L04-0323", tab: "Healthy" },
+  { serial: "L04-0043", tab: "Obvious failure" },
+  { serial: "L04-0348", tab: "Hidden defect" },
+] as const;
 
-function DotPlot({ w, h, across, fs, narrow = false }: { w: number; h: number; across: number; fs: number; narrow?: boolean }) {
-  // Label rows, in multiples of fs below the top rule. On a narrow screen the
-  // median and limit labels would collide, so they stack instead.
-  const row = narrow
-    ? { usl: 0.9, med: [2.3, 3.5], part: [4.9, 6.1] }
-    : { usl: 0.9, med: [0.9, 2.2], part: [3.3, 4.6] };
-  const bins = H.lotHist as readonly Bin[];
-  const defects = H.lotDefectHist as readonly Bin[];
-  const pl = fs * 0.5, pr = fs * 0.5, pt = fs * (row.part[1] + 1.2), pb = fs * 3;
-  const x0 = pl, x1 = w - pr, y1 = h - pb;
-  const X = (v: number) => x0 + ((v - H.histLo) / (H.histHi - H.histLo)) * (x1 - x0);
-  const col = (x1 - x0) / bins.length;
-  const pitch = col / across;
-  const r = pitch * 0.4;
-  const heroBin = Math.floor((H.value168 - H.histLo) / ((H.histHi - H.histLo) / bins.length));
+const VERDICT = {
+  ACCEPT: { mark: "●", word: "Accept", color: C.pass },
+  WATCH: { mark: "▲", word: "Watch", color: C.watch },
+  REJECT: { mark: "■", word: "Reject", color: C.reject },
+} as const;
 
-  // Healthy dots first, labelled latent defects stacked on top, so the red
-  // accumulates where the lot thins out - which is the point.
-  const dots: { cx: number; cy: number; d: boolean; i: number; hero: boolean }[] = [];
-  bins.forEach((b, i) => {
-    const nd = defects[i]?.n ?? 0;
-    for (let k = 0; k < b.n; k++) {
-      const cx = x0 + i * col + pitch * ((k % across) + 0.5);
-      const cy = y1 - pitch * (Math.floor(k / across) + 0.5);
-      const hero = i === heroBin && k === b.n - 1;
-      dots.push({ cx, cy, d: k >= b.n - nd, i, hero });
-    }
-  });
-  const hd = dots.find((d) => d.hero)!;
-  const n = bins.reduce((a, b) => a + b.n, 0);
-  const xm = X(H.lotMedian168), xu = X(H.usl);
-  const top = pt - fs * 1.2;
-
+function Chip({ serial, color }: { serial: string; color: string }) {
+  // A drawn package: board-green body, copper pins, a status light in the verdict colour.
+  const pins = Array.from({ length: 7 }, (_, i) => 22 + i * 16);
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="block h-auto w-full" role="img"
-      aria-label={`Lot ${H.lot}: ${n} components at 168 h. ${H.serial} reads ${H.value168} ${U}, under the ${H.usl} ${U} datasheet limit and far from its lot's median of ${H.lotMedian168} ${U}.`}>
-      {/* datasheet limit */}
-      <line x1={xu} x2={xu} y1={top} y2={y1} stroke={C.reject} strokeWidth={fs * 0.14} />
-      <text x={xu - fs * 0.5} y={top + fs * row.usl} textAnchor="end" fontSize={fs} fontWeight={700} fill={C.reject}>
-        Datasheet limit {H.usl} {U}
-      </text>
-
-      {/* lot median */}
-      <line x1={xm} x2={xm} y1={top} y2={y1} stroke={C.ink} strokeWidth={fs * 0.1} strokeDasharray={`${fs * 0.3} ${fs * 0.3}`} />
-      <text x={xm + fs * 0.5} y={top + fs * row.med[0]} paintOrder="stroke" stroke={C.sheet} strokeWidth={fs * 0.35} fontSize={fs} fontWeight={700} fill={C.ink}>
-        Lot median {H.lotMedian168} {U}
-      </text>
-      <text x={xm + fs * 0.5} y={top + fs * row.med[1]} paintOrder="stroke" stroke={C.sheet} strokeWidth={fs * 0.35} fontSize={fs} fill={C.graphite}>
-        where {n} parts from lot {H.lot} ended up
-      </text>
-
-      <g className="settle">
-        {dots.map((d, j) =>
-          d.hero ? null : (
-            <circle key={j} cx={d.cx} cy={d.cy} r={r} fill={d.d ? C.reject : C.cobalt}
-              fillOpacity={d.d ? 0.9 : 0.55} style={{ animationDelay: `${d.i * 22 + (j % across) * 8}ms` }} />
-          )
-        )}
-      </g>
-
-      {/* the component */}
-      <g className="settle-last">
-        <circle cx={hd.cx} cy={hd.cy} r={r * 2.3} fill="none" stroke={C.reject} strokeWidth={fs * 0.12} />
-        <circle cx={hd.cx} cy={hd.cy} r={r * 1.3} fill={C.reject} />
-        <line x1={hd.cx} x2={hd.cx} y1={hd.cy - r * 2.6} y2={top + fs * (row.part[0] + 0.1)} stroke={C.reject} strokeWidth={fs * 0.08} />
-        <text x={hd.cx - fs * 0.6} y={top + fs * row.part[0]} textAnchor="end" paintOrder="stroke" stroke={C.sheet} strokeWidth={fs * 0.35} fontSize={fs * 1.15} fontWeight={800} fill={C.reject}>
-          {H.serial}: {H.value168} {U}
-        </text>
-        <text x={hd.cx - fs * 0.6} y={top + fs * row.part[1]} textAnchor="end" paintOrder="stroke" stroke={C.sheet} strokeWidth={fs * 0.35} fontSize={fs} fill={C.graphite}>
-          passes by {H.marginLeft} {U}; drift {H.driftZ}σ beyond its lot
-        </text>
-      </g>
-
-      {/* axis */}
-      <line x1={x0} x2={x1} y1={y1} y2={y1} stroke={C.rule} strokeWidth={fs * 0.1} />
-      {[0, 10, 20, 30, 40, 50].map((v) => (
-        <text key={v} x={X(v)} y={y1 + fs * 1.4} textAnchor="middle" fontSize={fs} fill={C.mute}>{v}</text>
+    <svg viewBox="0 0 200 150" className="h-auto w-full max-w-[140px] sm:max-w-[180px]" aria-hidden>
+      {pins.map((x) => (
+        <g key={x} fill={C.copper}>
+          <rect x={x} y={4} width={8} height={18} rx={1.5} />
+          <rect x={x} y={128} width={8} height={18} rx={1.5} />
+        </g>
       ))}
-      <text x={x1} y={h - fs * 0.3} textAnchor="end" fontSize={fs} fill={C.mute}>
-        {H.param} at 168 h of burn-in, {U}
-      </text>
+      <rect x={12} y={20} width={176} height={110} rx={10} fill={C.ink} />
+      <circle cx={30} cy={38} r={5} fill="none" stroke="#2E6660" strokeWidth={2} />
+      <text x={100} y={82} textAnchor="middle" fontSize={20} fontWeight={700} fill="#E7EFEC">{serial}</text>
+      <text x={100} y={104} textAnchor="middle" fontSize={12} fill="#8FB0AA">batch {LOT}</text>
+      <circle cx={168} cy={112} r={7} fill={color} />
     </svg>
   );
 }
 
-export function Hero() {
+function Week({ part, env }: { part: Part; env: { p05: number[]; p50: number[]; p95: number[] } }) {
+  const W = 560, H = 300, L = 44, R = 70, T = 16, B = 36;
+  const X = (h: number) => L + (h / 168) * (W - L - R);
+  const Y = (v: number) => H - B - (Math.min(v, 62) / 62) * (H - T - B);
+  const vals = part.m[0];
+  const pts = HOURS.map((h, i) => [h, vals[i]] as const).filter(([, v]) => v != null) as [number, number][];
+  const line = pts.map(([h, v], i) => `${i ? "L" : "M"}${X(h)},${Y(v)}`).join(" ");
+  const band =
+    HOURS.map((h, i) => `${i ? "L" : "M"}${X(h)},${Y(env.p95[i])}`).join(" ") +
+    [...HOURS].reverse().map((h, j) => `L${X(h)},${Y(env.p05[3 - j])}`).join(" ") + "Z";
+  const last = pts[pts.length - 1];
+  const over = last[1] >= USL;
+
   return (
-    <section className="mx-auto max-w-[1200px] px-4 pb-16 pt-12 sm:px-8 sm:pt-20">
-      <h1 className="wide max-w-[17ch] text-[40px] font-black leading-[1.02] tracking-[-0.02em] sm:text-5xl lg:text-[76px]">
-        It passed every limit. It was still the worst part in its lot.
-      </h1>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end">
-        <p className="max-w-prose text-lg text-graphite">
-          SENTINEL screens burn-in components against their own production lot, not just the
-          datasheet. It forecasts drift from the first 24 hours and gives every rejection a
-          reason an inspector can check.
-        </p>
-        <div className="flex flex-wrap gap-3 lg:justify-end">
-          <Link href="/console" className="btn-primary px-5 py-2.5 text-base">Open the console</Link>
-          <a href="#detection" className="btn-quiet px-5 py-2.5 text-base">See how detection works</a>
-        </div>
+    <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img"
+      aria-label={`${part.s} over the week: ${pts.map(([h, v]) => `${v.toFixed(1)} at ${h} hours`).join(", ")}. Limit ${USL}.`}>
+      {[0, 20, 40, 60].map((v) => (
+        <g key={v}>
+          <line x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} stroke={C.hair} />
+          <text x={L - 8} y={Y(v) + 4} textAnchor="end" fontSize={12} fill={C.mute}>{v}</text>
+        </g>
+      ))}
+      <text x={L - 8} y={T - 2} textAnchor="end" fontSize={12} fill={C.mute}>µA</text>
+      {HOURS.map((h) => (
+        <text key={h} x={X(h)} y={H - 12} textAnchor="middle" fontSize={12} fill={C.mute}>
+          {h === 168 ? "168 h" : h === 0 ? "start" : `${h} h`}
+        </text>
+      ))}
+
+      <path d={band} fill={C.cobalt} fillOpacity={0.14} />
+      <text x={X(96)} y={Y(env.p05[2]) + 16} textAnchor="middle" fontSize={12} fill={C.cobalt}>
+        normal range for this batch
+      </text>
+
+      <line x1={L} x2={W - R} y1={Y(USL)} y2={Y(USL)} stroke={C.reject} strokeWidth={2} strokeDasharray="6 4" />
+      <text x={L + 6} y={Y(USL) - 7} fontSize={12} fontWeight={700} fill={C.reject}>datasheet limit {USL} µA</text>
+
+      {/* keyed by serial so the line redraws each time you switch chip */}
+      <g key={part.s}>
+        <path d={line} fill="none" stroke={C.ink} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round"
+          pathLength={1} className="draw" />
+        {pts.map(([h, v]) => (
+          <circle key={h} cx={X(h)} cy={Y(v)} r={5} fill={C.sheet} stroke={C.ink} strokeWidth={2.5} className="pop" />
+        ))}
+        <text x={W - R + 6} y={Y(last[1]) + (Math.abs(Y(last[1]) - Y(USL)) < 16 ? 20 : 4)} fontSize={14}
+          fontWeight={700} fill={over ? C.reject : C.ink} className="pop">
+          {last[1].toFixed(1)}
+        </text>
+      </g>
+    </svg>
+  );
+}
+
+function Stage({ data }: { data: ConsoleData }) {
+  const [k, setK] = useState(2);
+  // The batch's normal range at each reading: median +/- 3 robust sigma on log
+  // values, the same yardstick as the pipeline. Percentiles would be dragged
+  // up by this batch's own failures.
+  const env = useMemo(() => {
+    const rows = data.parts.filter((p) => p.l === LOT);
+    const at = HOURS.map((_, i) => rows.map((p) => p.m[0][i]).filter((v): v is number => v != null && v > 0).map(Math.log));
+    const m = at.map(median), sd = at.map(robustSigma);
+    return { p05: m.map((x, i) => Math.exp(x - 3 * sd[i])), p50: m.map(Math.exp), p95: m.map((x, i) => Math.exp(x + 3 * sd[i])) };
+  }, [data]);
+  const part = data.parts.find((p) => p.s === EXAMPLES[k].serial)!;
+  const v168 = part.m[0][3] ?? 0, v0 = part.m[0][0] ?? 0;
+  const oldPass = part.st === 0;
+  const sv = VERDICT[part.v];
+  const disagree = oldPass && part.v !== "ACCEPT";
+
+  const why =
+    part.v === "ACCEPT"
+      ? `Went from ${v0.toFixed(1)} to ${v168.toFixed(1)} µA, moving with its batch. Nothing unusual.`
+      : !oldPass
+        ? `Crossed a datasheet limit. Both tests reject it; this one was never going to fly.`
+        : `Rose from ${v0.toFixed(1)} to ${v168.toFixed(1)} µA while its batch stayed near ${env.p50[3].toFixed(1)}. Legal, but far outside its family.`;
+
+  return (
+    <div className="rounded-[14px] border border-rule bg-sheet shadow-[0_1px_0_#D3D9DF]">
+      <div role="tablist" aria-label="Pick a chip" className="flex gap-1 overflow-x-auto border-b border-rule p-2">
+        {EXAMPLES.map((e, i) => (
+          <button key={e.serial} role="tab" aria-selected={k === i} onClick={() => setK(i)}
+            className={cn("min-h-[44px] whitespace-nowrap rounded-[8px] px-4 text-sm font-bold transition-colors",
+              k === i ? "bg-ink text-sheet" : "text-graphite hover:bg-well hover:text-ink")}>
+            {e.tab}
+          </button>
+        ))}
       </div>
 
-      <figure className="card mt-10 px-4 pb-4 pt-5 sm:px-6">
-        <div className="hidden sm:block"><DotPlot w={1120} h={440} across={2} fs={13} /></div>
-        <div className="sm:hidden"><DotPlot w={560} h={560} across={2} fs={18} narrow /></div>
-        <figcaption className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-graphite">
-          <span>One dot per component, binned to {(H.histHi - H.histLo) / H.lotHist.length} {U}.</span>
-          <span className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-reject" />
-            Labelled latent defect (simulated ground truth, never a screening input)
-          </span>
-        </figcaption>
-      </figure>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[150px_minmax(0,1fr)] sm:p-5">
+        <div className="flex items-center justify-center sm:items-start"><Chip serial={part.s} color={sv.color} /></div>
+        <Week part={part} env={env} />
+      </div>
+
+      <div className="grid gap-px border-t border-rule bg-rule sm:grid-cols-2">
+        <div className="bg-sheet p-4 sm:p-5">
+          <p className="text-sm text-graphite">Old test: is it under the limit?</p>
+          <p className="wide mt-1 text-3xl font-extrabold" style={{ color: oldPass ? C.pass : C.reject }}>
+            {oldPass ? "✓ Pass" : "✕ Fail"}
+          </p>
+          <p className="mt-1 text-sm text-graphite">
+            {oldPass ? `${v168.toFixed(1)} is under ${USL}, and every other reading is in range.` : "At least one reading is over its limit."}
+          </p>
+        </div>
+        <div className={cn("bg-sheet p-4 sm:p-5", disagree && "outline outline-2 -outline-offset-2 outline-copper")}>
+          <p className="text-sm text-graphite">SENTINEL: is it behaving like its batch?</p>
+          <p key={part.s} className="wide pop-late mt-1 text-3xl font-extrabold" style={{ color: sv.color }}>
+            {sv.mark} {sv.word}
+          </p>
+          <p className="mt-1 text-sm text-graphite">{why}</p>
+        </div>
+      </div>
+      <p className={cn("border-t border-rule px-4 py-3 text-sm sm:px-5", disagree ? "bg-copper/10 font-bold text-copper" : "text-graphite")}>
+        {disagree
+          ? "The two tests disagree. This is the chip that would have flown."
+          : "Both tests agree here. Try \u201cHidden defect\u201d to see where they don't."}
+      </p>
+    </div>
+  );
+}
+
+export function Hero() {
+  const { data, error } = useConsole();
+  return (
+    <section className="mx-auto grid max-w-[1200px] grid-cols-[minmax(0,1fr)] gap-10 px-4 pb-16 pt-10 sm:px-8 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-center">
+      <div>
+        <h1 className="wide text-[44px] font-extrabold leading-[1] sm:text-6xl lg:text-[68px]">
+          Catch the chip that passes but shouldn&rsquo;t.
+        </h1>
+        <p className="mt-6 max-w-prose text-lg text-graphite">
+          Before a chip goes to space it spends a week in a hot oven, called <Term t="burn-in">burn-in</Term>.
+          The old test only asks if each reading stays under a <Term t="datasheet limit">limit</Term>.
+          SENTINEL also asks if the chip is behaving like the rest of its <Term t="lot">batch</Term>.
+        </p>
+        <p className="mt-3 max-w-prose text-lg text-graphite">Pick a chip and compare the two answers.</p>
+        <div className="mt-7 flex flex-wrap gap-3">
+          <Link href="/console" className="btn-primary min-h-[44px] px-5 text-base">Open the screening console</Link>
+          <a href="#gap" className="btn-quiet min-h-[44px] px-5 text-base">How it works</a>
+        </div>
+      </div>
+      {data ? (
+        <Stage data={data} />
+      ) : (
+        <div className="grid min-h-[480px] place-items-center rounded-[14px] border border-rule bg-sheet text-graphite">
+          {error ? `Could not load the chips: ${error}` : "Loading chips…"}
+        </div>
+      )}
     </section>
   );
 }

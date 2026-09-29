@@ -8,6 +8,7 @@ const config: Config = {
       colors: C,
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "var(--font-sans)", "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       // 15 px body, ~1.25 steps. Nothing in the product is set below 12 px.

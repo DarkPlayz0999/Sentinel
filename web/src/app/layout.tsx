@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
-import { Archivo } from "next/font/google";
+import { Atkinson_Hyperlegible, Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
 
-// One variable family. The width axis does the work a second typeface would:
-// expanded for display, normal for reading, condensed for column heads.
-const archivo = Archivo({
+// Atkinson Hyperlegible for reading - drawn for low-vision legibility, so
+// 0/O and 1/l/I never get confused in a serial or a reading. Bricolage
+// Grotesque for display, its optical-size axis tightening at large sizes.
+const body = Atkinson_Hyperlegible({
   subsets: ["latin"],
-  axes: ["wdth"],
+  weight: ["400", "700"],
   variable: "--font-sans",
+  display: "swap",
+});
+const display = Bricolage_Grotesque({
+  subsets: ["latin"],
+  axes: ["opsz", "wdth"],
+  variable: "--font-display",
   display: "swap",
 });
 
@@ -19,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={archivo.variable}>
+    <html lang="en" className={`${body.variable} ${display.variable}`}>
       <body className="bg-paper font-sans text-base text-ink antialiased">{children}</body>
     </html>
   );

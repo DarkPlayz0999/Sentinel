@@ -2,10 +2,10 @@ import Link from "next/link";
 import { Wordmark } from "@/components/console/shell";
 
 const SECTIONS = [
-  { id: "gap", label: "The gap" },
-  { id: "detection", label: "Detection" },
-  { id: "forecast", label: "Forecast" },
-  { id: "reasons", label: "Reasons" },
+  { id: "gap", label: "Is it legal?" },
+  { id: "detection", label: "Is it normal?" },
+  { id: "forecast", label: "Where is it heading?" },
+  { id: "careful", label: "Try it" },
 ];
 
 export function SiteHeader() {
