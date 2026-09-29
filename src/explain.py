@@ -9,11 +9,21 @@ inspector reads off the traveller - so the statistics may be computed on the log
 scale for currents, but the sentence never is.
 
     R-101  robust z of the 168h level > 6
+    R-102  robust z of the 0->168h DRIFT > 6
     R-201  robust z of the early delta > 5
     R-301  predicted slope exceeds the safety slope
     R-401  pooled multivariate evidence beyond chi2(0.999)
     R-501  curvature ratio > 2, degradation accelerating rather than settling
     R-601  lot-level: REJECT fraction exceeds the PDA gate
+
+R-102 exists because R-101 was not enough. R-101 asks whether the part's
+LEVEL is abnormal for its lot, which misses the project's own worked example: a
+part that starts near its lot's centre and then walks out of it. L04-0348 ends
+at 49.45 uA inside a 50 uA limit with a level z of only 4.04 - under R-101's
+gate - while its 0->168h drift is 18.65 robust sigma above the lot. The drift is
+what L2 and L3 actually score and what the verdict turns on, and until R-102
+there was no code that said so in a sentence. Detecting on one quantity and
+explaining with another is the failure this code closes.
 
 R-401's wording is deliberately NOT "these parameters are an impossible
 combination". The delta-vector covariance in this dataset is diagonal (rule 13),
@@ -21,10 +31,16 @@ so the pooled score fires on parts that are moderately elevated on several axes
 at once - which is a real and defensible reason to reject, but a different one.
 Saying "correlation break" here would be a claim the data does not support.
 
-Attribution for the robust-z layers is free: the contribution IS the z-score,
-and for the pooled score it is exactly the squared term. SHAP is only needed for
-Module B's gradient-boosted residual, and it is supporting evidence rather than
-the justification.
+Attribution for the robust-z layers is free and EXACT: the contribution IS the
+z-score, and for the pooled score it is exactly the squared term. There is no
+surrogate model between the decision and its explanation, which is a stronger
+guarantee than SHAP would give - reporting these terms is not an approximation
+of the decision, it is the decision.
+
+No SHAP is used anywhere in this project. Module B's gradient-boosted residual
+is not separately attributed; it feeds one named sub-score whose weight is
+fixed and visible, and the fused verdict is explained from those weighted
+contributions (see backend/app/services/explanation_service.py).
 """
 
 from __future__ import annotations
@@ -51,6 +67,7 @@ MODEL_VERSION = "sentinel-0.3.0"
 class Thresholds:
     """Trigger levels. Stated, not buried - an inspector may challenge them."""
     level_z: float = 6.0        # R-101
+    drift_z: float = 6.0        # R-102
     early_z: float = 5.0        # R-201
     slope_ratio: float = 1.0    # R-301
     pooled: float = 18.47       # R-401, chi2(0.999) with 4 dof
@@ -113,6 +130,34 @@ def reason_codes_for_part(df: pd.DataFrame, feat: pd.DataFrame, i,
                 f"({_fmt(val, p)} vs lot median {_fmt(ref, p)}). "
                 + verdict_clause,
                 f"z_{p}_level_168h", float(z), ref))
+
+        # ---- R-102 abnormal DRIFT for this lot
+        #
+        # The lot-relative statement R-101 cannot make. A part can sit at an
+        # ordinary level and still have moved further than anything else in its
+        # lot; that movement is the defect signature, and it is what the L2 and
+        # L3 sub-scores are built on.
+        z = feat.get(f"z_{p}_drift", pd.Series(dtype=float)).get(i, np.nan)
+        if np.isfinite(z) and z > t.drift_z:
+            c0 = f"{p}_0h"
+            c168 = f"{p}_168h"
+            if c0 in df.columns and c168 in df.columns:
+                v0, v168 = float(r[c0]), float(r[c168])
+                lot_rows = df[df[LOT_COL] == lot]
+                lot_drift = (lot_rows[c168] - lot_rows[c0]).median()
+                usl = PARAMS[p]["usl"]
+                within = (f"It remains within the datasheet limit of "
+                          f"{_fmt(usl, p)}, so a static screen passes it."
+                          if v168 <= usl else
+                          f"It also EXCEEDS the datasheet limit of "
+                          f"{_fmt(usl, p)}.")
+                codes.append(ReasonCode(
+                    "R-102", "high",
+                    f"{p} drifted {_fmt(v168 - v0, p)} between 0h and 168h "
+                    f"({_fmt(v0, p)} to {_fmt(v168, p)}), which is {z:.1f} "
+                    f"robust sigma beyond this lot's median drift of "
+                    f"{_fmt(float(lot_drift), p)}. " + within,
+                    f"z_{p}_drift", float(z), float(lot_drift)))
 
         # ---- R-201 fast early movement
         z = feat.get(f"z_{p}_early", pd.Series(dtype=float)).get(i, np.nan)

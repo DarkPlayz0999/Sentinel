@@ -112,8 +112,10 @@ def test_a_quiet_part_earns_no_codes(scored):
 def test_raising_a_threshold_can_only_remove_codes(scored):
     wide, feat, mb, _ = scored
     idx = wide.index[:300]
-    strict = Thresholds(level_z=99, early_z=99, curvature=99, pooled=1e9,
-                        slope_ratio=1e9)
+    # Every threshold must appear here. A new reason code that is not listed
+    # would keep firing and this assertion is what catches that.
+    strict = Thresholds(level_z=99, drift_z=99, early_z=99, curvature=99,
+                        pooled=1e9, slope_ratio=1e9)
     assert len(reason_codes(wide, feat, mb, strict, index=idx)) == 0
 
 

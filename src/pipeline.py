@@ -64,7 +64,9 @@ class ScreenResult:
 
 def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
            bands: Bands | None = None, target_reject: float | None = 0.05,
-           use_gbm: bool = True, lot_col: str = LOT_COL) -> ScreenResult:
+           use_gbm: bool = True, lot_col: str = LOT_COL,
+           forecaster: "PowerLawForecaster | None" = None,
+           forecaster_is_out_of_fold: bool = True) -> ScreenResult:
     """Run the full screen over a wide burn-in frame.
 
     ``target_reject`` places the verdict bands so the REJECT rate respects the
@@ -73,13 +75,38 @@ def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
 
     Module B is skipped when the frame has no 168h column - at hour 24 there is
     nothing to fit against - and the fused score redistributes its weight.
+
+    ``forecaster`` supplies an ALREADY-FITTED Module B model. Pass one and no
+    training happens in this call: the service loads a versioned artifact once
+    at startup instead of re-running a six-fold cross-validated LightGBM fit on
+    every request. Two consequences worth stating:
+
+      * A pre-fitted model only needs the 0h and 24h reads to predict, so an
+        hour-24 triage frame CAN get a Module B forecast - something the
+        fit-in-request path cannot do, because it has no 168h target to fit on.
+      * ``forecaster_is_out_of_fold`` is the caller's assertion that this model
+        never saw these parts. The caller knows (it compares the frame's hash
+        against the artifact's training hash); this function cannot. It is
+        recorded, not inferred, and a reported MAE depends on it.
+
+    Passing ``forecaster=None`` reproduces the previous behaviour exactly.
     """
     feat = build_features(df)
     has_late = all(f"{p}_168h" in df.columns for p in PARAM_NAMES)
     n_lots = df[lot_col].nunique()
     out_of_fold = False
+    has_early = all(f"{p}_{t}h" in df.columns
+                    for p in PARAM_NAMES for t in (0, 24))
 
-    if has_late and n_lots >= 2:
+    if forecaster is not None and has_early:
+        # Inference path: predict only. No fit, no cross-validation.
+        point = forecaster.predict(df, lot_col)
+        upper = forecaster.predict_upper(df, lot_col)
+        exps = dict(forecaster.exponents)
+        pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
+        mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
+        out_of_fold = bool(forecaster_is_out_of_fold)
+    elif has_late and n_lots >= 2:
         # Enough lots to hold one out: every part is forecast by a model that
         # never saw its lot, so the MAE from this is reportable (rule 6).
         r = forecast_all(df, use_gbm=use_gbm, lot_col=lot_col)

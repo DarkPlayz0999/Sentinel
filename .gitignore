@@ -56,3 +56,14 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+# web/ build output
+web/node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts
+
+# Runtime state: SQLite database, uploaded datasets, model artifacts.
+# Regenerable with `python -m backend.train`; never a source of truth.
+var/
+reports/
