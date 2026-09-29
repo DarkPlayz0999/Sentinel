@@ -159,6 +159,67 @@ CREATE TABLE IF NOT EXISTS model_artifacts (
     is_active             INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_artifacts_active ON model_artifacts(is_active);
+
+-- ---------------------------------------------------------------- agents
+-- One execution of the agent team on one dataset. `idempotency_key` is the
+-- hash of everything that decides the outcome (dataset, policy, model,
+-- pipeline); a second request with the same key returns this workflow.
+CREATE TABLE IF NOT EXISTS agent_workflows (
+    workflow_id      TEXT PRIMARY KEY,
+    idempotency_key  TEXT NOT NULL,
+    trigger          TEXT NOT NULL,        -- manual | dataset_uploaded | ...
+    dataset_id       TEXT NOT NULL REFERENCES datasets(dataset_id),
+    data_class       TEXT,                 -- simulated | experimental | unknown
+    run_id           TEXT,                 -- screening run, once combined
+    status           TEXT NOT NULL,        -- QUEUED RUNNING COMPLETED QUARANTINED FAILED
+    current_step     TEXT,
+    created_at       TEXT NOT NULL,
+    started_at       TEXT,
+    completed_at     TEXT,
+    duration_s       REAL,
+    summary          TEXT,                 -- JSON
+    error            TEXT,
+    actor            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wf_key    ON agent_workflows(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_wf_status ON agent_workflows(status);
+
+-- One attempt of one agent. A retried agent has several rows.
+CREATE TABLE IF NOT EXISTS agent_steps (
+    step_id      TEXT PRIMARY KEY,
+    workflow_id  TEXT NOT NULL REFERENCES agent_workflows(workflow_id),
+    agent        TEXT NOT NULL,
+    status       TEXT NOT NULL,            -- RUNNING COMPLETED FAILED
+    attempt      INTEGER NOT NULL,
+    started_at   TEXT NOT NULL,
+    completed_at TEXT,
+    duration_s   REAL,
+    output       TEXT,                     -- JSON typed agent report
+    error        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_steps_wf ON agent_steps(workflow_id);
+
+CREATE TABLE IF NOT EXISTS agent_findings (
+    finding_id   TEXT PRIMARY KEY,
+    workflow_id  TEXT NOT NULL REFERENCES agent_workflows(workflow_id),
+    agent        TEXT NOT NULL,
+    severity     TEXT NOT NULL,            -- info warning error critical
+    code         TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    data         TEXT,                     -- JSON
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_findings_wf ON agent_findings(workflow_id);
+
+-- Append-only change feed behind the SSE stream. The integer id is the
+-- stream cursor (Last-Event-ID), so a reconnecting client misses nothing.
+CREATE TABLE IF NOT EXISTS agent_events (
+    seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id  TEXT NOT NULL,
+    kind         TEXT NOT NULL,            -- workflow | step | finding
+    payload      TEXT NOT NULL,            -- JSON
+    created_at   TEXT NOT NULL
+);
 """
 
 

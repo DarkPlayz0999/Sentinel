@@ -23,7 +23,8 @@ from src.module_a import module_a_scores
 from src.module_b import (PowerLawForecaster, calibrate_population_k,
                           early_reject, early_warning_score, forecast_all)
 
-__all__ = ["ScreenResult", "screen", "load_wide", "DATA"]
+__all__ = ["ScreenResult", "ModuleBResult", "screen", "run_module_b",
+           "combine", "load_wide", "DATA"]
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "burnin_wide.csv"
 
@@ -92,27 +93,50 @@ def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
     Passing ``forecaster=None`` reproduces the previous behaviour exactly.
     """
     feat = build_features(df)
-    has_late = all(f"{p}_168h" in df.columns for p in PARAM_NAMES)
+    mb = run_module_b(df, target_reject=target_reject, use_gbm=use_gbm,
+                      lot_col=lot_col, forecaster=forecaster,
+                      forecaster_is_out_of_fold=forecaster_is_out_of_fold)
+    return combine(df, feat, mb, weights=weights, bands=bands,
+                   target_reject=target_reject, lot_col=lot_col)
+
+
+@dataclass
+class ModuleBResult:
+    """Module B's output, before fusion. `module_b` is None when no forecast ran."""
+    point: pd.DataFrame
+    upper: pd.DataFrame
+    module_b: pd.DataFrame | None
+    exponents: dict
+    population_k: float | None
+    out_of_fold: bool
+
+
+def run_module_b(df: pd.DataFrame, *, target_reject: float | None = 0.05,
+                 use_gbm: bool = True, lot_col: str = LOT_COL,
+                 forecaster: "PowerLawForecaster | None" = None,
+                 forecaster_is_out_of_fold: bool = True) -> ModuleBResult:
+    """Module B on its own: forecast, upper bound, safety-slope decision.
+
+    Split out of `screen()` so the Forecast agent calls exactly this, in
+    parallel with Module A. `screen()` still calls it - one definition.
+    """
     n_lots = df[lot_col].nunique()
-    out_of_fold = False
+    has_late = all(f"{p}_168h" in df.columns for p in PARAM_NAMES)
     has_early = all(f"{p}_{t}h" in df.columns
                     for p in PARAM_NAMES for t in (0, 24))
+    out_of_fold = False
 
     if forecaster is not None and has_early:
         # Inference path: predict only. No fit, no cross-validation.
         point = forecaster.predict(df, lot_col)
         upper = forecaster.predict_upper(df, lot_col)
         exps = dict(forecaster.exponents)
-        pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
-        mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
         out_of_fold = bool(forecaster_is_out_of_fold)
     elif has_late and n_lots >= 2:
         # Enough lots to hold one out: every part is forecast by a model that
         # never saw its lot, so the MAE from this is reportable (rule 6).
         r = forecast_all(df, use_gbm=use_gbm, lot_col=lot_col)
         point, upper, exps = r.point, r.upper, r.mean_exponents
-        pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
-        mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
         out_of_fold = True
     elif has_late:
         # A single lot - the normal production case, screening one lot at a
@@ -123,27 +147,40 @@ def screen(df: pd.DataFrame, weights: RiskWeights | None = None,
         m = PowerLawForecaster(use_gbm=use_gbm).fit(df, lot_col)
         point, upper, exps = (m.predict(df, lot_col), m.predict_upper(df, lot_col),
                               dict(m.exponents))
-        pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
-        mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
     else:
-        point = upper = pd.DataFrame(index=df.index)
-        mb, exps, pop_k = None, {}, None
+        empty = pd.DataFrame(index=df.index)
+        return ModuleBResult(empty, empty, None, {}, None, False)
 
-    fused = fuse(df, feat, mb, weights, bands, lot_col)
+    pop_k = calibrate_population_k(df, upper, target_reject or 0.05, lot_col)
+    mb = early_reject(df, upper, lot_col=lot_col, k=pop_k)
+    return ModuleBResult(point, upper, mb, exps, pop_k, out_of_fold)
+
+
+def combine(df: pd.DataFrame, feat: pd.DataFrame, mb: ModuleBResult, *,
+            module_a: pd.DataFrame | None = None,
+            weights: RiskWeights | None = None, bands: Bands | None = None,
+            target_reject: float | None = 0.05,
+            lot_col: str = LOT_COL) -> ScreenResult:
+    """Fuse Module A features and Module B output into verdicts and lot status.
+
+    `module_a` may be passed in when the caller (the Anomaly agent) already
+    computed it; it is recomputed otherwise.
+    """
+    fused = fuse(df, feat, mb.module_b, weights, bands, lot_col)
     if bands is None and target_reject is not None:
         bands = bands_for_pda(fused.risk_score, target_reject)
-        fused = fuse(df, feat, mb, weights, bands, lot_col)
+        fused = fuse(df, feat, mb.module_b, weights, bands, lot_col)
     else:
         bands = bands or Bands()
 
     return ScreenResult(
         features=feat,
-        module_a=module_a_scores(df, feat),
-        forecast_point=point, forecast_upper=upper, module_b=mb,
+        module_a=module_a if module_a is not None else module_a_scores(df, feat),
+        forecast_point=mb.point, forecast_upper=mb.upper, module_b=mb.module_b,
         early_score=early_warning_score(df, lot_col),
         fused=fused, pda=lot_pda_status(fused, lot_col), bands=bands,
-        exponents=exps, forecast_out_of_fold=out_of_fold,
-        population_k=pop_k,
+        exponents=mb.exponents, forecast_out_of_fold=mb.out_of_fold,
+        population_k=mb.population_k,
     )
 
 

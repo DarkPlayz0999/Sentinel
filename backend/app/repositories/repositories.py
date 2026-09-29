@@ -22,7 +22,7 @@ from backend.app.models.database_models import (
 __all__ = [
     "utc_now", "new_id",
     "DatasetRepository", "ScreeningRepository", "ComponentRepository",
-    "AuditRepository", "JobRepository", "ModelRepository",
+    "AuditRepository", "JobRepository", "ModelRepository", "AgentRepository",
 ]
 
 
@@ -334,3 +334,147 @@ class ModelRepository(_Repo):
         return [self._hydrate(r) for r in self._all(
             "SELECT * FROM model_artifacts ORDER BY created_at DESC LIMIT ?",
             (limit,))]
+
+
+# ---------------------------------------------------------------- agents
+class AgentRepository(_Repo):
+    """Workflows, agent steps, findings, and the change feed behind SSE.
+
+    Every state change also appends to `agent_events`, in the same
+    transaction, so the stream can never show a state the tables don't hold.
+    """
+
+    _WF_JSON = ("summary",)
+
+    def _event(self, c, workflow_id: str, kind: str, payload: dict) -> None:
+        c.execute("INSERT INTO agent_events(workflow_id, kind, payload, created_at)"
+                  " VALUES(?,?,?,?)", (workflow_id, kind, dumps(payload), utc_now()))
+
+    # ------------------------------------------------------- workflows
+    def create_workflow(self, *, idempotency_key: str, trigger: str,
+                        dataset_id: str, actor: str | None) -> tuple[dict, bool]:
+        """(workflow, created). Returns the live workflow for a key if one exists.
+
+        A FAILED workflow does not block a new one - retrying a failure is the
+        point - but QUEUED/RUNNING/COMPLETED/QUARANTINED do.
+        """
+        with connect(self.db_path) as c:
+            c.execute("BEGIN IMMEDIATE")  # serialise concurrent submits
+            hit = c.execute(
+                "SELECT * FROM agent_workflows WHERE idempotency_key=? AND status != 'FAILED'"
+                " ORDER BY created_at DESC LIMIT 1", (idempotency_key,)).fetchone()
+            if hit:
+                return self._hydrate(row_to_dict(hit)), False
+            wid = new_id("wf")
+            c.execute(
+                """INSERT INTO agent_workflows(workflow_id, idempotency_key, trigger,
+                   dataset_id, status, created_at, actor) VALUES(?,?,?,?,?,?,?)""",
+                (wid, idempotency_key, trigger, dataset_id, "QUEUED", utc_now(), actor))
+            self._event(c, wid, "workflow", {"status": "QUEUED", "trigger": trigger,
+                                             "dataset_id": dataset_id})
+        return self.get_workflow(wid), True
+
+    def claim(self, workflow_id: str, from_status: str = "QUEUED") -> bool:
+        """Atomically move from_status -> RUNNING. False if someone else has it."""
+        with connect(self.db_path) as c:
+            cur = c.execute(
+                "UPDATE agent_workflows SET status='RUNNING', started_at=?, error=NULL"
+                " WHERE workflow_id=? AND status=?", (utc_now(), workflow_id, from_status))
+            if cur.rowcount:
+                self._event(c, workflow_id, "workflow", {"status": "RUNNING"})
+            return bool(cur.rowcount)
+
+    def update_workflow(self, workflow_id: str, **fields: Any) -> None:
+        if not fields:
+            return
+        vals = [dumps(v) if k in self._WF_JSON else v for k, v in fields.items()]
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with connect(self.db_path) as c:
+            c.execute(f"UPDATE agent_workflows SET {sets} WHERE workflow_id=?",
+                      (*vals, workflow_id))
+            self._event(c, workflow_id, "workflow", fields)
+
+    @classmethod
+    def _hydrate(cls, row: dict | None) -> dict | None:
+        if row:
+            for k in cls._WF_JSON:
+                row[k] = loads(row[k], None)
+        return row
+
+    def get_workflow(self, workflow_id: str) -> dict | None:
+        return self._hydrate(self._one(
+            "SELECT * FROM agent_workflows WHERE workflow_id=?", (workflow_id,)))
+
+    def list_workflows(self, limit: int = 50) -> list[dict]:
+        return [self._hydrate(r) for r in self._all(
+            "SELECT * FROM agent_workflows ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (limit,))]
+
+    # ----------------------------------------------------------- steps
+    def start_step(self, workflow_id: str, agent: str) -> tuple[str, int]:
+        step_id = new_id("step")
+        with connect(self.db_path) as c:
+            attempt = c.execute(
+                "SELECT COUNT(*) FROM agent_steps WHERE workflow_id=? AND agent=?",
+                (workflow_id, agent)).fetchone()[0] + 1
+            c.execute(
+                """INSERT INTO agent_steps(step_id, workflow_id, agent, status,
+                   attempt, started_at) VALUES(?,?,?,?,?,?)""",
+                (step_id, workflow_id, agent, "RUNNING", attempt, utc_now()))
+            c.execute("UPDATE agent_workflows SET current_step=? WHERE workflow_id=?",
+                      (agent, workflow_id))
+            self._event(c, workflow_id, "step", {"agent": agent, "status": "RUNNING",
+                                                 "attempt": attempt})
+        return step_id, attempt
+
+    def finish_step(self, step_id: str, workflow_id: str, agent: str, *,
+                    status: str, duration_s: float, output: dict | None = None,
+                    error: str | None = None) -> None:
+        with connect(self.db_path) as c:
+            c.execute(
+                """UPDATE agent_steps SET status=?, completed_at=?, duration_s=?,
+                   output=?, error=? WHERE step_id=?""",
+                (status, utc_now(), round(duration_s, 3), dumps(output or {}),
+                 error, step_id))
+            self._event(c, workflow_id, "step", {"agent": agent, "status": status,
+                                                 "duration_s": round(duration_s, 3),
+                                                 "error": error})
+
+    def steps(self, workflow_id: str) -> list[dict]:
+        rows = self._all("SELECT * FROM agent_steps WHERE workflow_id=?"
+                         " ORDER BY started_at, rowid", (workflow_id,))
+        for r in rows:
+            r["output"] = loads(r["output"], {})
+        return rows
+
+    # -------------------------------------------------------- findings
+    def add_findings(self, workflow_id: str, agent: str, findings: list[dict]) -> None:
+        if not findings:
+            return
+        with connect(self.db_path) as c:
+            for f in findings:
+                c.execute(
+                    """INSERT INTO agent_findings(finding_id, workflow_id, agent,
+                       severity, code, message, data, created_at) VALUES(?,?,?,?,?,?,?,?)""",
+                    (new_id("fnd"), workflow_id, agent, f["severity"], f["code"],
+                     f["message"], dumps(f.get("data") or {}), utc_now()))
+            self._event(c, workflow_id, "finding", {"agent": agent, "count": len(findings)})
+
+    def findings(self, workflow_id: str) -> list[dict]:
+        rows = self._all("SELECT * FROM agent_findings WHERE workflow_id=?"
+                         " ORDER BY created_at, rowid", (workflow_id,))
+        for r in rows:
+            r["data"] = loads(r["data"], {})
+        return rows
+
+    # ---------------------------------------------------------- stream
+    def events_after(self, seq: int, limit: int = 200) -> list[dict]:
+        rows = self._all("SELECT * FROM agent_events WHERE seq > ? ORDER BY seq LIMIT ?",
+                         (seq, limit))
+        for r in rows:
+            r["payload"] = loads(r["payload"], {})
+        return rows
+
+    def last_seq(self) -> int:
+        row = self._one("SELECT COALESCE(MAX(seq), 0) AS s FROM agent_events")
+        return int(row["s"]) if row else 0

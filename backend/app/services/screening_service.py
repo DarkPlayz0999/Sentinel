@@ -94,17 +94,7 @@ class ScreeningService:
         Failures are recorded on the run and the job, then re-raised: a run
         that failed must be visible as FAILED, never left RUNNING forever.
         """
-        run = self.runs.get(run_id)
-        if not run:
-            raise NotFoundError(f"No screening run with id {run_id!r}.")
-        if run["status"] not in ("QUEUED", "FAILED"):
-            raise ScreeningError(
-                f"Run {run_id} is {run['status']}; only a QUEUED or FAILED run "
-                "can be executed.")
-
-        self.runs.mark_running(run_id)
-        if job_id:
-            self.jobs.mark_running(job_id)
+        run = self.start(run_id, job_id=job_id)
         t0 = time.perf_counter()
 
         try:
@@ -127,65 +117,90 @@ class ScreeningService:
                     forecaster=loaded.model if loaded else None,
                     forecaster_is_out_of_fold=oof)
 
-            rows = self._component_rows(df, res)
-            self.components.bulk_insert(run_id, rows)
-
-            summary = res.fused.verdict.value_counts().to_dict()
-            duration = time.perf_counter() - t0
-            self.runs.mark_completed(
-                run_id, duration_s=round(duration, 3),
-                bands={"watch": round(res.bands.watch, 3),
-                       "reject": round(res.bands.reject, 3)},
-                summary={k: int(v) for k, v in summary.items()},
-                row_count=len(df),
-                forecast_out_of_fold=res.forecast_out_of_fold,
-                module_b_available=res.module_b is not None,
-                model_artifact_id=loaded.artifact_id if loaded else None,
-                model_sha256=loaded.artifact_sha256 if loaded else None)
-
-            self.audit.record(
-                "RUN_COMPLETED", run_id=run_id, dataset_id=run["dataset_id"],
-                actor=run.get("actor"),
-                metadata={"summary": {k: int(v) for k, v in summary.items()},
-                          "duration_s": round(duration, 3),
-                          "model_artifact_id": loaded.artifact_id if loaded else None,
-                          "forecast_out_of_fold": res.forecast_out_of_fold})
-            # One line per rejection, so "why was this part rejected" has an
-            # audit answer and not only a database row.
-            for r in rows:
-                if r["verdict"] == "REJECT":
-                    self.audit.record(
-                        "COMPONENT_REJECTED", run_id=run_id, serial=r["serial"],
-                        actor=run.get("actor"),
-                        metadata={"risk_score": r["risk_score"],
-                                  "lot": r["lot"],
-                                  "primary_reason":
-                                      (r.get("explanation") or {})
-                                      .get("primary_reason", {})
-                                      .get("code")})
-
-            if job_id:
-                self.jobs.mark_completed(job_id, run_id)
-
-            log_event("SCREENING_COMPLETED", log, run_id=run_id, rows=len(df),
-                      accept=int(summary.get("ACCEPT", 0)),
-                      watch=int(summary.get("WATCH", 0)),
-                      reject=int(summary.get("REJECT", 0)),
-                      duration_s=round(duration, 3),
-                      model_version=run["model_version"])
-            return self.get_run(run_id)
+            return self.persist_result(run, df, res, loaded, t0, job_id=job_id)
 
         except Exception as exc:
-            self.runs.mark_failed(run_id, f"{type(exc).__name__}: {exc}")
-            self.audit.record("RUN_FAILED", run_id=run_id,
-                              dataset_id=run["dataset_id"],
-                              metadata={"error_type": type(exc).__name__})
-            if job_id:
-                self.jobs.mark_failed(job_id, str(exc),
-                                      getattr(exc, "code", "SCREENING_FAILED"))
-            log_event("SCREENING_FAILED", log, run_id=run_id,
-                      error_type=type(exc).__name__)
+            self.fail(run, exc, job_id=job_id)
             raise
+
+    def start(self, run_id: str, *, job_id: str | None = None) -> dict:
+        """Mark a QUEUED/FAILED run RUNNING. Shared by execute() and the agents."""
+        run = self.runs.get(run_id)
+        if not run:
+            raise NotFoundError(f"No screening run with id {run_id!r}.")
+        if run["status"] not in ("QUEUED", "FAILED"):
+            raise ScreeningError(
+                f"Run {run_id} is {run['status']}; only a QUEUED or FAILED run "
+                "can be executed.")
+        self.runs.mark_running(run_id)
+        if job_id:
+            self.jobs.mark_running(job_id)
+        return run
+
+    def persist_result(self, run: dict, df: pd.DataFrame, res: ScreenResult,
+                       loaded, t0: float, *, job_id: str | None = None) -> dict:
+        """Persist a finished ScreenResult: components, run row, audit trail."""
+        run_id = run["run_id"]
+        rows = self._component_rows(df, res)
+        self.components.bulk_insert(run_id, rows)
+
+        summary = res.fused.verdict.value_counts().to_dict()
+        duration = time.perf_counter() - t0
+        self.runs.mark_completed(
+            run_id, duration_s=round(duration, 3),
+            bands={"watch": round(res.bands.watch, 3),
+                   "reject": round(res.bands.reject, 3)},
+            summary={k: int(v) for k, v in summary.items()},
+            row_count=len(df),
+            forecast_out_of_fold=res.forecast_out_of_fold,
+            module_b_available=res.module_b is not None,
+            model_artifact_id=loaded.artifact_id if loaded else None,
+            model_sha256=loaded.artifact_sha256 if loaded else None)
+
+        self.audit.record(
+            "RUN_COMPLETED", run_id=run_id, dataset_id=run["dataset_id"],
+            actor=run.get("actor"),
+            metadata={"summary": {k: int(v) for k, v in summary.items()},
+                      "duration_s": round(duration, 3),
+                      "model_artifact_id": loaded.artifact_id if loaded else None,
+                      "forecast_out_of_fold": res.forecast_out_of_fold})
+        # One line per rejection, so "why was this part rejected" has an
+        # audit answer and not only a database row.
+        for r in rows:
+            if r["verdict"] == "REJECT":
+                self.audit.record(
+                    "COMPONENT_REJECTED", run_id=run_id, serial=r["serial"],
+                    actor=run.get("actor"),
+                    metadata={"risk_score": r["risk_score"],
+                              "lot": r["lot"],
+                              "primary_reason":
+                                  (r.get("explanation") or {})
+                                  .get("primary_reason", {})
+                                  .get("code")})
+
+        if job_id:
+            self.jobs.mark_completed(job_id, run_id)
+
+        log_event("SCREENING_COMPLETED", log, run_id=run_id, rows=len(df),
+                  accept=int(summary.get("ACCEPT", 0)),
+                  watch=int(summary.get("WATCH", 0)),
+                  reject=int(summary.get("REJECT", 0)),
+                  duration_s=round(duration, 3),
+                  model_version=run["model_version"])
+        return self.get_run(run_id)
+
+    def fail(self, run: dict, exc: BaseException, *, job_id: str | None = None) -> None:
+        """Record FAILED on the run (and job). Never leaves a run RUNNING."""
+        run_id = run["run_id"]
+        self.runs.mark_failed(run_id, f"{type(exc).__name__}: {exc}")
+        self.audit.record("RUN_FAILED", run_id=run_id,
+                          dataset_id=run["dataset_id"],
+                          metadata={"error_type": type(exc).__name__})
+        if job_id:
+            self.jobs.mark_failed(job_id, str(exc),
+                                  getattr(exc, "code", "SCREENING_FAILED"))
+        log_event("SCREENING_FAILED", log, run_id=run_id,
+                  error_type=type(exc).__name__)
 
     # ------------------------------------------------- result construction
     def _component_rows(self, df: pd.DataFrame, res: ScreenResult) -> list[dict]:

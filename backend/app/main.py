@@ -31,7 +31,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.explain import MODEL_VERSION
 
-from backend.app.api.routes import datasets, health, legacy, models, reports, screening
+from backend.app.api.routes import agents, datasets, health, legacy, models, reports, screening
 from backend.app.core.config import get_settings
 from backend.app.core.exceptions import SentinelError, error_envelope
 from backend.app.core.logging import configure_logging, get_logger, log_event, new_request_id
@@ -69,6 +69,7 @@ TAGS = [
     {"name": "screening", "description": "Screening runs, jobs, component results, audit trail."},
     {"name": "reports", "description": "Structured screening records and signed one-page PDFs."},
     {"name": "models", "description": "Model registry, training, and honest performance reporting."},
+    {"name": "agents", "description": "Agent team: workflows, steps, findings, live event stream."},
     {"name": "legacy", "description": "Original unversioned endpoints, contracts unchanged."},
 ]
 
@@ -168,7 +169,7 @@ def create_app() -> FastAPI:
             status_code=500)
 
     for r in (health.router, datasets.router, screening.router,
-              reports.router, models.router, legacy.router):
+              reports.router, models.router, agents.router, legacy.router):
         app.include_router(r)
 
     return app
