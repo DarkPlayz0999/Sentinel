@@ -19,6 +19,32 @@ Read it before proposing architecture changes.
 > fixed seed, which is what lets us prove recall against known ground truth —
 > something real unlabelled burn-in data can never do.
 
+## At a glance
+
+On the 2,100 simulated chips in this repo (`python -m src.report`):
+
+| | Old datasheet test | SENTINEL |
+|---|---|---|
+| Hidden (latent) defects caught | **0 of 174** | **141 of 174** (81 %, WATCH or REJECT) |
+| Good chips sent for a second look | — | 6.0 % |
+| Chips rejected | 55, all obvious failures | 105, each with a written reason |
+| Decision possible at | 168 h | 24 h for the worst 104 chips (14,976 oven-hours freed) |
+
+What is in the box:
+
+- **Screening science** (`src/`): per-lot robust outlier detection (Module A),
+  a 24 h → 168 h drift forecast (Module B), a 0–100 risk score made of five
+  named sub-scores, and reason codes R-101…R-601 in plain English.
+- **Screening service** (`backend/`): FastAPI with datasets, runs, jobs, a
+  model registry, an append-only audit trail and signed one-page PDF reports.
+- **Agent team** (`backend/app/agents/`): a LangGraph workflow — Data Quality →
+  Anomaly ∥ Forecast → Combine, with quarantine for bad data. No LLM; no agent
+  releases a chip. See [`docs/AGENTS.md`](docs/AGENTS.md).
+- **Web console** (`web/`): an interactive explainer for anyone (three chips,
+  two tests; drag a batch through the week; set how careful the screen is),
+  plus the inspector console, batch and chip views, reports and live agent
+  operations.
+
 ---
 
 ## The problem
@@ -66,7 +92,8 @@ python -m venv .venv
 ```
 
 ```bash
-.venv\Scripts\activate
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate      # macOS / Linux
 ```
 
 ```bash
@@ -129,6 +156,35 @@ python web/scripts/export_lab_data.py
 cd web && npm install && npm run dev      # http://localhost:3000
 ```
 
+### Run the whole app (no Docker)
+
+Two terminals from the repo root:
+
+```bash
+uvicorn src.api:app --port 8000          # API, agents, SSE stream  -> http://localhost:8000/docs
+```
+
+```bash
+cd web && npm run dev                    # console                  -> http://localhost:3000
+```
+
+| Page | What it is for |
+|---|---|
+| `/` | Plain-language explainer: three chips, two tests |
+| `/console` | Results at a glance: the hidden-defect scoreboard, carefulness slider, chips to look at first |
+| `/console/screen` | Upload a burn-in CSV and screen it |
+| `/console/lots`, `/console/components` | Batches and every chip, with drift plots |
+| `/console/reports` | Printable inspector report for one chip |
+| `/console/agents` | Agent team: live status, findings, workflow history (needs the API) |
+
+To run the agent team on a dataset from the command line:
+
+```bash
+curl -F "file=@data/burnin_wide.csv" localhost:8000/v1/datasets/upload        # -> dataset_id
+curl -X POST "localhost:8000/v1/agents/workflows?dataset_id=<dataset_id>"
+curl -N localhost:8000/v1/agents/events                                        # live events
+```
+
 ## Generated data
 
 `src/generate_burnin_dataset.py` produces 2,100 parts across 6 lots, 4
@@ -181,22 +237,24 @@ src/                           the screening science - one definition of everyth
   module_a.py                  dynamic outlier detection (L1 static, L2 DPAT, L3 pooled evidence)
   module_b.py                  drift forecast (power law + GBM + quantile bound)
   fusion.py                    0-100 screening risk score, ACCEPT/WATCH/REJECT
-  explain.py                   reason codes, SHAP, per-part plots
+  explain.py                   reason codes R-101..R-601, per-part plots
   evaluate.py                  THE scorer. One scorer, one truth.
   api.py                       entry-point shim: `uvicorn src.api:app` -> backend/app/main.py
 backend/                       FastAPI service: persistence, jobs, audit trail, /v1 API
   app/                         routes, services, repositories, models, schemas
+  app/agents/                  LangGraph agent team: contracts.py (typed state), graph.py
   train.py                     train and register the forecaster once
 web/                           Next.js web console (static export)
-  src/app/                     landing page + /console/{screen,lots,components,analysis,reports}
-  src/components/              ui/ primitives, charts/, console/, site/ (landing)
-  src/lib/                     data loaders; lab-data.ts is generated, never hand-edited
+  src/app/                     landing page + /console/{screen,lots,components,analysis,reports,agents}
+  src/components/              ui/ (kit, glossary Term), charts/, console/, site/ (hero, oven, careful)
+  src/lib/                     data loaders, theme.ts (the palette), agents-api.ts (SSE client);
+                               lab-data.ts is generated, never hand-edited
   scripts/export_lab_data.py   writes lab-data.ts, public/data/console.json, public/samples/
 app/
   dashboard.py                 Streamlit QA-inspector dashboard (Python-only fallback)
 data/                          generated CSVs (gitignored)
 tests/                         pytest suite
-docs/                          blueprints, slide blueprint, historical audits
+docs/                          blueprints, slide blueprint, team briefing, AGENTS.md
 run_demo.sh                    one-command demo
 start_app.sh                   API + Streamlit dashboard + web console
 ```
@@ -204,6 +262,18 @@ start_app.sh                   API + Streamlit dashboard + web console
 All of it is implemented and tested. The pipeline runs end to end from an
 empty `data/`, and the API, the dashboard and `src/report.py` all call
 `src/pipeline.py`, so none of them can disagree about a part.
+
+## Tech stack
+
+| Layer | Tools |
+|---|---|
+| Science | Python 3.12, NumPy, pandas, SciPy, scikit-learn, LightGBM (L1 + quantile) |
+| Service | FastAPI, Pydantic, Uvicorn, SQLite (WAL), ReportLab PDFs |
+| Agents | LangGraph + SQLite checkpointer, Server-Sent Events |
+| Web | Next.js 14 (static export), React 18, TypeScript, Tailwind CSS, hand-drawn SVG charts |
+| Tests | pytest — 199 tests (`python -m pytest tests/ -q`, about 7 minutes) |
+
+No Docker, GPU or cloud service is needed; everything runs on a laptop.
 
 ## Rules that are not negotiable
 
@@ -372,10 +442,10 @@ GroupKFold by lot:
 
 | Parameter | n* | MAE | linear | last-value | vs linear |
 |---|---|---|---|---|---|
-| Iddq_uA | 0.41 | **1.313** | 2.352 | 1.835 | −44 % |
-| Ileak_nA | 0.41 | **2.595** | 4.559 | 3.598 | −43 % |
-| Tpd_ns | 0.00 | 0.157 | 0.388 | **0.113** | −60 % |
-| Vol_mV | 0.00 | 8.624 | 26.231 | **7.545** | −67 % |
+| Iddq_uA | 0.41 | **1.292** | 2.352 | 1.835 | −45 % |
+| Ileak_nA | 0.41 | **2.586** | 4.559 | 3.598 | −43 % |
+| Tpd_ns | 0.00 | 0.158 | 0.388 | **0.113** | −59 % |
+| Vol_mV | 0.00 | 8.753 | 26.231 | **7.545** | −67 % |
 
 `n* = 0` means the fit found no extrapolable signal on that axis: the best 168 h
 estimate is the 24 h reading, and plain last-value-carried-forward wins. That is
