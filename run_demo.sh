@@ -34,5 +34,5 @@ banner "6/7  Full screen - fused verdict, PDA status, reason codes"
 banner "7/7  Signed screening report (PDF) for every REJECT"
 "$PY" -m src.screening_report
 
-printf '\n\033[1mDashboard:\033[0m  streamlit run app/dashboard.py\n'
-printf '\033[1mAPI:\033[0m        uvicorn src.api:app --reload   (docs at /docs)\n'
+printf '\n\033[1mAPI:\033[0m        uvicorn src.api:app --reload   (docs at /docs)\n'
+printf '\033[1mConsole:\033[0m    cd web \&\& npm run dev   (http://localhost:3000)\n'

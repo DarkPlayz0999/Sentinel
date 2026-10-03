@@ -142,10 +142,6 @@ python -m pytest tests/ -q
 ```
 
 ```bash
-streamlit run app/dashboard.py
-```
-
-```bash
 uvicorn src.api:app --reload
 ```
 
@@ -176,6 +172,11 @@ cd web && npm run dev                    # console                  -> http://lo
 | `/console/lots`, `/console/components` | Batches and every chip, with drift plots |
 | `/console/reports` | Printable inspector report for one chip |
 | `/console/agents` | Agent team: live status, findings, workflow history (needs the API) |
+| `/console/lab` | **Fault-injection lab**: 3D board twin, inject a fault, Sentinel finds it, replace and rerun (needs the API) |
+| `/console/benchmark` | **Blind benchmark**: ESR sweep, Monte Carlo, out-of-distribution suite (needs the API) |
+
+On Windows, `powershell -ExecutionPolicy Bypass -File start_app.ps1` starts the
+API and the console in one command.
 
 To run the agent team on a dataset from the command line:
 
@@ -184,6 +185,63 @@ curl -F "file=@data/burnin_wide.csv" localhost:8000/v1/datasets/upload        # 
 curl -X POST "localhost:8000/v1/agents/workflows?dataset_id=<dataset_id>"
 curl -N localhost:8000/v1/agents/events                                        # live events
 ```
+
+## Digital twin and fault-injection lab
+
+A local 3D digital twin of a burn-in board (`src/twin`) that **generates** the
+measurements Sentinel screens. It never screens them: a simulated lot becomes an
+ordinary dataset and goes through the unmodified pipeline and agent team.
+
+```
+3D board -> burn-in -> fault injection -> circuit solve -> ATE reads -> Sentinel
+  -> agents -> bad component identified -> 3D highlight -> explanation
+  -> replacement -> rerun -> before/after -> benchmark against ground truth
+```
+
+* **Board RB-1**: 11 components plus test points, each with a fixed ID shared by
+  the 3D object, the backend and the simulation model. Every component reaches at
+  least one of Sentinel's four parameters through a real circuit path.
+* **A lot, not one board**: Sentinel's statistics are per lot, undefined at n = 1,
+  so the engine simulates 200 boards and the 3D view shows one.
+* **Physics**: SPICE-syntax netlists solved by a batched MNA solver (ngspice
+  cross-check when installed), lumped thermal model with degradation feedback,
+  Arrhenius aging, 22 fault types, tester noise, bias, dropouts, IR camera.
+* **Blind mode**: the simulator hides the fault; the API withholds truth until
+  Sentinel has predicted. Sentinel receives serial, lot and 16 ATE columns only -
+  a test asserts it.
+* **Investigation agents** (run only on a Sentinel flag): diagnostic, root cause,
+  QA/safety, report. Evidence scores are similarities, never probabilities.
+
+How to use it:
+
+| Task | How |
+|---|---|
+| Start | `uvicorn src.api:app --port 8000`, `cd web && npm run dev`, open `/console/lab` |
+| Run the SIH demo | *Run the demo, blind*, or `POST /v1/simulations?start=true` `{"scenario":"sih_demo"}` |
+| Inject a fault | *Build your own* (VISIBLE), or `POST /v1/simulations/{id}/faults` before start |
+| Blind benchmark | create with `"mode":"BLIND","hidden_faults":{"count":3}`, screen, then `POST /v1/simulations/{id}/reveal` |
+| Connect Sentinel | automatic at 168 h (`auto_screen`); or `POST /v1/simulations/{id}/screen` |
+| Run experiments | `python -m src.twin.experiments --kind ood --seed 42 --runs 28 --boards 150` or `/console/benchmark` |
+| Reproduce | same config + seed = same bytes; see `docs/twin/reproducibility.md` |
+
+Measured (seed 42, 150 boards per lot, 6 % faulty, flagged = WATCH or REJECT):
+in-distribution recall 0.69 (0.80 on faults that move any measured channel);
+higher tester noise 0.44; subtler-than-training faults 0.28; combined faults 0.78.
+Top-1 localisation 0.60, top-3 0.81 over the OOD suite. Full tables and the
+commands that produce them: `docs/twin/evaluation.md`. Simulated research tool:
+not flight certified, not a validated burn-in.
+
+Docs: `docs/twin/` - architecture, simulation model, fault models, Sentinel
+integration, agent workflow, evaluation, reproducibility, SIH demo script.
+
+### SENTINEL AI (Mistral, optional)
+
+An **Ask SENTINEL AI** assistant on every console page, plain-language summary
+cards on the main pages, and a fifth investigation agent (the Explainer). The AI
+words what the system computed and never decides; every number it writes is
+checked against the data, and an answer with an invented number is discarded.
+Set `MISTRAL_API_KEY` on the API to switch it on; without it, built-in summaries
+are used. Details: `docs/AI.md`.
 
 ## Generated data
 
@@ -240,23 +298,26 @@ src/                           the screening science - one definition of everyth
   explain.py                   reason codes R-101..R-601, per-part plots
   evaluate.py                  THE scorer. One scorer, one truth.
   api.py                       entry-point shim: `uvicorn src.api:app` -> backend/app/main.py
+  twin/                        digital twin: board, circuit (MNA + ngspice), faults, engine,
+                               diagnose, replace, benchmark, experiments
 backend/                       FastAPI service: persistence, jobs, audit trail, /v1 API
   app/                         routes, services, repositories, models, schemas
-  app/agents/                  LangGraph agent team: contracts.py (typed state), graph.py
+  app/agents/                  LangGraph agent teams: contracts.py, graph.py (phase 1),
+                               investigation.py (diagnostic -> root cause -> QA -> report)
   train.py                     train and register the forecaster once
 web/                           Next.js web console (static export)
-  src/app/                     landing page + /console/{screen,lots,components,analysis,reports,agents}
+  src/app/                     landing page + /console/{screen,lots,components,analysis,reports,agents,
+                               twin,lab,benchmark}
   src/components/              ui/ (kit, glossary Term), charts/, console/, site/ (hero, oven, careful)
   src/lib/                     data loaders, theme.ts (the palette), agents-api.ts (SSE client);
                                lab-data.ts is generated, never hand-edited
   scripts/export_lab_data.py   writes lab-data.ts, public/data/console.json, public/samples/
-app/
-  dashboard.py                 Streamlit QA-inspector dashboard (Python-only fallback)
 data/                          generated CSVs (gitignored)
 tests/                         pytest suite
-docs/                          blueprints, slide blueprint, team briefing, AGENTS.md
+docs/                          blueprints, slide blueprint, team briefing, AGENTS.md, twin/
 run_demo.sh                    one-command demo
-start_app.sh                   API + Streamlit dashboard + web console
+start_app.sh                   API + web console
+start_app.ps1                  API + web console, one command on Windows
 ```
 
 All of it is implemented and tested. The pipeline runs end to end from an
@@ -523,7 +584,7 @@ models you have no scorer for. All nine steps are done.
 5. ✅ Module A L3 — one-sided pooled evidence (**not** Mahalanobis; see above).
 6. ✅ `fusion.py` — weighted risk score, three-band verdict, PDA-aware bands.
 7. ✅ `explain.py` — reason codes R-101…R-601, drift plot, part report.
-8. ✅ `app/dashboard.py` — six screens, cost-ratio slider.
+8. ✅ A Streamlit dashboard (six screens) - later retired: every screen now lives in the web console.
 9. ✅ `api.py`, `pipeline.py`, `report.py`, `run_demo.sh`.
 10. ✅ `screening_report.py` — one-page signed PDF per rejected part.
 11. ✅ `wafer.py` — wafer map, plus a permutation test for spatial clustering.

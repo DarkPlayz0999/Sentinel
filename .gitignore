@@ -42,8 +42,6 @@ coverage.xml
 # notebooks
 .ipynb_checkpoints/
 
-# streamlit
-.streamlit/secrets.toml
 
 # ---------------------------------------------------------------- editors / OS
 .vscode/
