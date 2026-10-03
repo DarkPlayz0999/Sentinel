@@ -11,7 +11,9 @@ import { ApiError, getApiBase } from "@/lib/screen-api";
 
 export type WorkflowStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "QUARANTINED" | "FAILED";
 export type StepStatus = "RUNNING" | "COMPLETED" | "FAILED";
-export type AgentName = "data_quality" | "anomaly" | "forecast" | "combine" | "quarantine";
+export type AgentName =
+  | "data_quality" | "anomaly" | "forecast" | "combine" | "quarantine"
+  | "diagnostic" | "root_cause" | "qa_safety" | "report" | "explainer";
 
 export interface Workflow {
   workflow_id: string;
@@ -118,7 +120,9 @@ export function useAgentEvents(onEvent: (e: AgentEvent) => void) {
   cb.current = onEvent;
 
   useEffect(() => {
-    const es = new EventSource(`${getApiBase()}/v1/agents/events`);
+    // tail=30: show the recent history at once instead of an empty stream
+    // until the next event happens. Reconnects resume via Last-Event-ID.
+    const es = new EventSource(`${getApiBase()}/v1/agents/events?tail=30`);
     const handle = (m: MessageEvent) => {
       try {
         cb.current({ id: Number(m.lastEventId), ...JSON.parse(m.data) });

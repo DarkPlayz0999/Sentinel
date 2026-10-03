@@ -18,7 +18,9 @@ from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
-AgentName = Literal["data_quality", "anomaly", "forecast", "combine", "quarantine"]
+AgentName = Literal["data_quality", "anomaly", "forecast", "combine", "quarantine",
+                    # investigation team (backend/app/agents/investigation.py)
+                    "diagnostic", "root_cause", "qa_safety", "report", "explainer"]
 Severity = Literal["info", "warning", "error", "critical"]
 DataClass = Literal["simulated", "experimental", "unknown"]
 
@@ -69,6 +71,73 @@ class CombineReport(BaseModel):
     verdicts: dict[str, int]
     lots_over_pda: list[str]
     human_review_required: bool    # always true if anything was flagged
+
+
+class Hypothesis(BaseModel):
+    """One root-cause hypothesis. `evidence_score` is a similarity x 100."""
+    rank: int
+    component_id: str
+    fault_type: str
+    mechanism: str
+    evidence_score: float
+    implied_severity: float
+    signature: list[str] = Field(default_factory=list)
+
+
+class DiagnosticReport(BaseModel):
+    boards: dict[str, dict]                 # serial -> src.twin.diagnose output
+    focus_serial: str
+    suspect_component: str | None
+    ambiguity_group: list[str] = Field(default_factory=list)
+
+
+class RootCauseReport(BaseModel):
+    focus_serial: str
+    hypotheses: list[Hypothesis]
+    score_kind: str = "evidence score (cosine similarity x 100), not a probability"
+
+
+class QACheck(BaseModel):
+    check: str
+    status: Literal["PASS", "WARN", "FAIL", "INFO"]
+    detail: str
+
+
+class QASafetyReport(BaseModel):
+    status: Literal["PASS", "REVIEW"]
+    checks: list[QACheck]
+
+
+class InvestigationReport(BaseModel):
+    simulation_id: str
+    focus_serial: str
+    verdict: str
+    risk_score: float
+    primary_reason: dict | None
+    suspect_component: str | None
+    suspect_fault_type: str | None
+    evidence_score: float | None
+    ambiguity_group: list[str]
+    discriminating_tests: list[dict]
+    qa_status: str
+    recommended_actions: list[str]
+    summary: str
+    disclaimers: list[str]
+
+
+class InvestigationState(TypedDict, total=False):
+    workflow_id: str
+    simulation_id: str
+    dataset_id: str
+    run_id: str
+    actor: str | None
+    serials: list[str]              # flagged boards, highest risk first
+    diagnostic: dict
+    root_cause: dict
+    qa_safety: dict
+    report: dict
+    explanation: dict               # plain-language wording of the report (AI or built-in)
+    findings: Annotated[list[dict], operator.add]
 
 
 class WorkflowState(TypedDict, total=False):

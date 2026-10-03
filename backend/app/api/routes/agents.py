@@ -25,7 +25,8 @@ from backend.app.services.dataset_service import DatasetService
 router = APIRouter(prefix="/v1/agents", tags=["agents"], responses=ERROR_RESPONSES)
 log = get_logger("api.agents")
 
-AGENTS = ("data_quality", "anomaly", "forecast", "combine", "quarantine")
+AGENTS = ("data_quality", "anomaly", "forecast", "combine", "quarantine",
+          "diagnostic", "root_cause", "qa_safety", "report", "explainer")
 
 
 def _repo() -> AgentRepository:
@@ -112,10 +113,18 @@ async def agent_status():
 async def events(request: Request,
                  follow: bool = Query(True, description="False: send backlog and close"),
                  since: int | None = Query(None, description="Start after this event id"),
+                 tail: int | None = Query(None, ge=0, le=500,
+                                          description="Also send the last N events first"),
                  last_event_id: str | None = Header(None)):
     repo = _repo()
-    cursor = since if since is not None else (
-        int(last_event_id) if last_event_id and last_event_id.isdigit() else repo.last_seq())
+    if since is not None:
+        cursor = since
+    elif last_event_id and last_event_id.isdigit():
+        cursor = int(last_event_id)          # a reconnect resumes exactly where it left off
+    elif tail:
+        cursor = max(0, repo.last_seq() - tail)
+    else:
+        cursor = repo.last_seq()
 
     async def stream():
         nonlocal cursor

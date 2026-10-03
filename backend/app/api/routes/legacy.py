@@ -7,8 +7,8 @@
     GET  /lots
     POST /screen
 
-These are kept byte-compatible on purpose. The Streamlit dashboard, the web
-console's Screen page and `tests/test_api.py` all consume them, and a
+These are kept byte-compatible on purpose. The web console's Screen page and
+`tests/test_api.py` consume them, and a
 "cleaner" response shape is not worth breaking a working client for. The
 production path is `/v1`; this surface is preserved, not extended.
 

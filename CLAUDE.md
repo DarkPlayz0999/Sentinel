@@ -76,7 +76,7 @@ src/
   explain.py                   reason codes, SHAP, per-part plots
   evaluate.py                  THE scorer. One scorer, one truth.
   api.py                       FastAPI service
-app/                           Streamlit dashboard
+  twin/                        digital twin: generates measurements, never screens them
 backend/                       FastAPI service layer (src/api.py is a shim onto it)
 web/                           Next.js web console - the primary frontend
 data/                          generated CSVs (gitignored)
@@ -89,11 +89,16 @@ docs/
 ```
 python src/generate_burnin_dataset.py    # regenerate data (seed 42, reproducible)
 python -m pytest tests/ -q
-streamlit run app/dashboard.py
 uvicorn src.api:app --reload
 python web/scripts/export_lab_data.py      # refresh the web console's data
 cd web && npm run dev                      # web console on :3000
+python -m src.twin.experiments --kind ood --seed 42 --runs 28 --boards 150
 ```
+
+Digital twin (`src/twin`, `/console/lab`, docs in `docs/twin/`): the twin only
+generates ATE reads; Sentinel screens them through the unmodified pipeline. Truth
+never enters `SimResult.sentinel_frame()` or the investigation path, and the API
+withholds it in BLIND mode until a prediction exists. Keep it that way.
 
 Windows: use `python`, not `python3`. Paths use `pathlib.Path`, never
 hardcoded separators — teammates are on mixed OSes.

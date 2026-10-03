@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ConsoleState } from "@/components/console/shell";
+import { AiSummary } from "@/components/ai/ai-summary";
 import { PdaBars, ScoreBands } from "@/components/charts/charts";
 import {
   Card, CardHead, Figure, PageHead, Provenance, Risk, SectionTitle, Stamp,
@@ -97,6 +98,8 @@ export default function Overview() {
           </p>
         </Card>
       </div>
+
+      <AiSummary subject={{ context: "overview" }} title="The results in plain language" className="mt-8" />
 
       {/* ----------------------------------------------------- the queue */}
       <section id="careful" className="mt-10 scroll-mt-6">
