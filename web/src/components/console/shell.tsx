@@ -6,6 +6,7 @@ import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Card, num } from "@/components/ui/kit";
 import { useConsole } from "@/lib/console";
+import { Assistant } from "@/components/ai/assistant";
 
 /* The console chrome: a rail with the six screens and the run's tag - the
  * facts that hang on a lot as it moves through the line. Screen sits second
@@ -14,6 +15,10 @@ import { useConsole } from "@/lib/console";
 
 const NAV = [
   { href: "/console", label: "Results at a glance", hint: "What was caught, and what to look at first" },
+  { href: "/console/twin", label: "The oven, in 3D", hint: "Watch a whole batch soak and one chip drift" },
+  { href: "/console/lab", label: "Fault-injection lab", hint: "3D board twin: inject a fault, let Sentinel find it" },
+  { href: "/console/benchmark", label: "Blind benchmark", hint: "Sweeps, Monte Carlo and out-of-distribution tests" },
+  { href: "/console/realdata", label: "Real data (NASA)", hint: "Measured capacitor and MOSFET aging" },
   { href: "/console/screen", label: "Check a new batch", hint: "Upload a test file and screen it" },
   { href: "/console/lots", label: "Batches", hint: "Is any whole batch misbehaving?" },
   { href: "/console/components", label: "Every chip", hint: "Search, sort and open any chip" },
@@ -132,6 +137,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="mx-auto w-full max-w-[1280px] px-4 py-8 sm:px-8 lg:py-10">{children}</main>
+      <Assistant />
     </div>
   );
 }

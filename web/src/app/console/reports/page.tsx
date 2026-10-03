@@ -7,6 +7,7 @@ import { ConsoleState } from "@/components/console/shell";
 import { ACTION } from "@/components/console/detail";
 import { Trajectory } from "@/components/charts/charts";
 import { Card, PageHead, ReasonCode, Stamp, num, pct, sigma, unit, verdictText } from "@/components/ui/kit";
+import { AiSummary } from "@/components/ai/ai-summary";
 import { ConsoleData, Part, lotEnvelope, useConsole } from "@/lib/console";
 import { cn } from "@/lib/utils";
 
@@ -313,6 +314,7 @@ function Inner() {
           </label>
           {part && <button onClick={() => window.print()} className="btn-primary">Print or save PDF</button>}
         </Card>
+        {part && <AiSummary subject={{ context: "part", serial: part.s }} title={`${part.s} in plain language`} className="mb-6" />}
       </div>
 
       {part ? (
