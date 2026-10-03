@@ -38,7 +38,6 @@ pydantic==2.9.2            # request/response contracts
 # matter here are domain rules (negative currents, duplicate serials,
 # insufficient lot population, implausible magnitudes) with machine-readable
 # error codes, which pandera expresses awkwardly. It was pinned and unused.
-streamlit==1.39.0
 reportlab==4.2.5           # one-page signed screening report (PDF)
 python-multipart==0.0.17   # required by FastAPI for the POST /screen upload
 

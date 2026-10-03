@@ -4,8 +4,8 @@ Two API surfaces, deliberately:
 
   LEGACY (unversioned)  /health  /part/{serial}  /part/{serial}/report
                         /lot/{id}  /lots  POST /screen
-        Contracts unchanged, byte for byte. The Streamlit dashboard, the web
-        console and `tests/test_api.py` all depend on them, and a refactor
+        Contracts unchanged, byte for byte. The web console and
+        `tests/test_api.py` depend on them, and a refactor
         that silently changes a response is a refactor that breaks clients.
         Implemented in `backend/app/api/routes/legacy.py`, which now calls the
         service layer instead of holding logic itself.
@@ -31,7 +31,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.explain import MODEL_VERSION
 
-from backend.app.api.routes import agents, datasets, health, legacy, models, reports, screening
+from backend.app.api.routes import (agents, ai, datasets, health, legacy, models, realdata,
+                                    reports, screening, simulation)
 from backend.app.core.config import get_settings
 from backend.app.core.exceptions import SentinelError, error_envelope
 from backend.app.core.logging import configure_logging, get_logger, log_event, new_request_id
@@ -70,6 +71,12 @@ TAGS = [
     {"name": "reports", "description": "Structured screening records and signed one-page PDFs."},
     {"name": "models", "description": "Model registry, training, and honest performance reporting."},
     {"name": "agents", "description": "Agent team: workflows, steps, findings, live event stream."},
+    {"name": "simulation", "description": "Digital twin: simulated lots, fault injection, "
+                                    "the closed loop, blind benchmark and experiments."},
+    {"name": "ai", "description": "Plain-language summaries and questions (Mistral, optional). "
+                            "Explains; never decides. Every number is checked against the data."},
+    {"name": "realdata", "description": "Prepared NASA aging datasets (capacitors, MOSFETs): "
+                                  "measured data, reshaped never re-measured."},
     {"name": "legacy", "description": "Original unversioned endpoints, contracts unchanged."},
 ]
 
@@ -169,7 +176,8 @@ def create_app() -> FastAPI:
             status_code=500)
 
     for r in (health.router, datasets.router, screening.router,
-              reports.router, models.router, agents.router, legacy.router):
+              reports.router, models.router, agents.router, simulation.router,
+              ai.router, realdata.router, legacy.router):
         app.include_router(r)
 
     return app

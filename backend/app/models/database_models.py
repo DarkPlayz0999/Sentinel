@@ -220,6 +220,178 @@ CREATE TABLE IF NOT EXISTS agent_events (
     payload      TEXT NOT NULL,            -- JSON
     created_at   TEXT NOT NULL
 );
+
+-- ------------------------------------------------------------- digital twin
+-- One simulated lot of boards (src/twin). Every table below carries the
+-- simulation id, a timestamp, the twin software version and the random seed,
+-- so any row can be traced back to the run that produced it and replayed.
+CREATE TABLE IF NOT EXISTS simulation_runs (
+    simulation_id    TEXT PRIMARY KEY,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT,
+    status           TEXT NOT NULL,        -- CREATED QUEUED RUNNING SIMULATED SCREENING
+                                           -- SCREENED INVESTIGATED FAILED SIMULATION_FAILED
+    mode             TEXT NOT NULL,        -- VISIBLE | BLIND
+    board_id         TEXT NOT NULL,
+    lot_id           TEXT NOT NULL,
+    boards           INTEGER NOT NULL,
+    random_seed      INTEGER NOT NULL,
+    config           TEXT NOT NULL,        -- JSON SimConfig without faults
+    options          TEXT NOT NULL,        -- JSON: solver, auto_screen, monitor_z, label
+    sim_time_h       REAL NOT NULL DEFAULT 0,
+    software_version TEXT NOT NULL,
+    model_version    TEXT NOT NULL,
+    dataset_id       TEXT,                 -- Sentinel dataset of the observed frame
+    run_id           TEXT,                 -- Sentinel screening run
+    workflow_id      TEXT,                 -- phase-1 agent workflow
+    investigation_id TEXT,                 -- investigation agent workflow
+    focus_serial     TEXT,                 -- the board Sentinel ranked first
+    investigation    TEXT,                 -- JSON report
+    job_id           TEXT,
+    revealed_at      TEXT,
+    error            TEXT,                 -- JSON, e.g. a SIMULATION_FAILED record
+    actor            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS simulation_components (
+    simulation_id    TEXT NOT NULL REFERENCES simulation_runs(simulation_id),
+    phase            TEXT NOT NULL,        -- burn-in-1 | rework-N
+    board_serial     TEXT NOT NULL,
+    component_id     TEXT NOT NULL,
+    component_model  TEXT NOT NULL,
+    kind             TEXT NOT NULL,
+    as_built         TEXT NOT NULL,        -- JSON: ground truth
+    state            TEXT NOT NULL,        -- JSON per read point: ground truth
+    timestamp        TEXT NOT NULL,
+    software_version TEXT NOT NULL,
+    random_seed      INTEGER NOT NULL,
+    PRIMARY KEY (simulation_id, phase, board_serial, component_id)
+);
+
+-- OBSERVED values only: ATE reads (component_id NULL) and IR camera reads.
+CREATE TABLE IF NOT EXISTS simulation_measurements (
+    simulation_id      TEXT NOT NULL REFERENCES simulation_runs(simulation_id),
+    phase              TEXT NOT NULL,
+    board_serial       TEXT NOT NULL,
+    component_id       TEXT,
+    time_h             REAL NOT NULL,
+    parameter          TEXT NOT NULL,
+    value              REAL,
+    unit               TEXT NOT NULL,
+    measurement_source TEXT NOT NULL,      -- SPICE PHYSICS_MODEL SYNTHETIC DATASET
+    solver             TEXT,
+    timestamp          TEXT NOT NULL,
+    software_version   TEXT NOT NULL,
+    random_seed        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_simmeas ON simulation_measurements(simulation_id, board_serial);
+
+CREATE TABLE IF NOT EXISTS simulation_faults (
+    fault_id         TEXT PRIMARY KEY,
+    simulation_id    TEXT NOT NULL REFERENCES simulation_runs(simulation_id),
+    board_serial     TEXT NOT NULL,
+    board_index      INTEGER NOT NULL,
+    component_id     TEXT NOT NULL,
+    fault_type       TEXT NOT NULL,
+    severity         REAL NOT NULL,
+    start_h          REAL NOT NULL,
+    growth_rate      REAL NOT NULL,
+    source           TEXT NOT NULL,        -- injected | hidden-random | replacement part
+    timestamp        TEXT NOT NULL,
+    software_version TEXT NOT NULL,
+    random_seed      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_simfaults ON simulation_faults(simulation_id);
+
+-- Kept apart from everything Sentinel or the agents read. Written once, read
+-- only by reveal/benchmark after a prediction exists.
+CREATE TABLE IF NOT EXISTS simulation_ground_truth (
+    simulation_id    TEXT NOT NULL REFERENCES simulation_runs(simulation_id),
+    phase            TEXT NOT NULL,
+    board_serial     TEXT NOT NULL,
+    component_id     TEXT,                 -- faulty component(s), comma-joined
+    is_faulty        INTEGER NOT NULL,
+    truth            TEXT NOT NULL,        -- JSON
+    timestamp        TEXT NOT NULL,
+    software_version TEXT NOT NULL,
+    random_seed      INTEGER NOT NULL,
+    PRIMARY KEY (simulation_id, phase, board_serial)
+);
+
+CREATE TABLE IF NOT EXISTS simulation_events (
+    seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulation_id    TEXT NOT NULL,
+    timestamp        TEXT NOT NULL,
+    event_type       TEXT NOT NULL,
+    board_serial     TEXT,
+    component_id     TEXT,
+    payload          TEXT NOT NULL,        -- JSON
+    software_version TEXT NOT NULL,
+    random_seed      INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_simevents ON simulation_events(simulation_id, seq);
+
+CREATE TABLE IF NOT EXISTS simulation_predictions (
+    prediction_id    TEXT PRIMARY KEY,
+    simulation_id    TEXT NOT NULL REFERENCES simulation_runs(simulation_id),
+    phase            TEXT NOT NULL,
+    read_h           INTEGER NOT NULL,     -- last read point the screen saw
+    board_serial     TEXT NOT NULL,
+    component_id     TEXT,                 -- suspect component, once diagnosed
+    run_id           TEXT,
+    dataset_id       TEXT,
+    risk_score       REAL NOT NULL,
+    verdict          TEXT NOT NULL,
+    reason_codes     TEXT NOT NULL,        -- JSON
+    model_version    TEXT NOT NULL,
+    timestamp        TEXT NOT NULL,
+    software_version TEXT NOT NULL,
+    random_seed      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_simpred ON simulation_predictions(simulation_id, phase, read_h);
+
+CREATE TABLE IF NOT EXISTS simulation_replacements (
+    replacement_id   TEXT PRIMARY KEY,
+    simulation_id    TEXT NOT NULL REFERENCES simulation_runs(simulation_id),
+    phase            TEXT NOT NULL,        -- rework-N
+    board_serial     TEXT NOT NULL,
+    component_id     TEXT NOT NULL,
+    candidate_id     TEXT NOT NULL,
+    reel             TEXT NOT NULL,
+    candidate        TEXT NOT NULL,        -- JSON public view: criteria and score
+    hidden           TEXT NOT NULL,        -- JSON ground truth of the new part
+    before           TEXT,                 -- JSON
+    after            TEXT,                 -- JSON
+    removed_bench    TEXT,                 -- JSON bench measurement of the pulled part
+    outcome          TEXT,                 -- after-rerun verdict
+    run_id           TEXT,
+    dataset_id       TEXT,
+    timestamp        TEXT NOT NULL,
+    model_version    TEXT NOT NULL,
+    software_version TEXT NOT NULL,
+    random_seed      INTEGER NOT NULL,
+    actor            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_simrepl ON simulation_replacements(simulation_id);
+
+CREATE TABLE IF NOT EXISTS simulation_experiments (
+    experiment_id    TEXT PRIMARY KEY,
+    created_at       TEXT NOT NULL,
+    completed_at     TEXT,
+    status           TEXT NOT NULL,        -- QUEUED RUNNING COMPLETED FAILED
+    kind             TEXT NOT NULL,
+    spec             TEXT NOT NULL,        -- JSON
+    random_seed      INTEGER NOT NULL,
+    runs             INTEGER NOT NULL,
+    progress         TEXT,                 -- JSON {done, total, cell}
+    summary          TEXT,                 -- JSON
+    artifact_path    TEXT,                 -- the benchmark dataset CSV
+    job_id           TEXT,
+    error            TEXT,
+    model_version    TEXT NOT NULL,
+    software_version TEXT NOT NULL,
+    actor            TEXT
+);
 """
 
 
@@ -266,6 +438,10 @@ def connect(db_path: Path | str) -> Iterator[sqlite3.Connection]:
         raise
     finally:
         conn.close()
+
+
+# The twin's tables are additive (CREATE ... IF NOT EXISTS inside SCHEMA), so
+# an existing database gains them on the next start without a migration.
 
 
 def init_db(db_path: Path | str) -> None:

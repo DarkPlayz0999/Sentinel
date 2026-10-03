@@ -60,7 +60,7 @@ Routes parse and shape. They hold no business logic.
 **Legacy (unversioned)** — `/health`, `/part/{serial}`, `/part/{serial}/report`,
 `/lot/{id}`, `/lots`, `POST /screen`.
 
-Contracts unchanged. The Streamlit dashboard, the web console's Screen page and
+Contracts unchanged. The web console's Screen page and
 `tests/test_api.py` consume these. They now call the service layer and use the
 model artifact, but every response shape is the same.
 

@@ -62,7 +62,10 @@ log = get_logger("agents")
 
 # ponytail: fixed per-agent budgets; move to Settings when an operator needs to tune them.
 TIMEOUT_S = {"data_quality": 60, "anomaly": 300, "forecast": 900, "combine": 900,
-             "quarantine": 30}
+             "quarantine": 30,
+             # investigation team (investigation.py)
+             "diagnostic": 120, "root_cause": 60, "qa_safety": 60, "report": 60,
+             "explainer": 90}
 # Transient only. A validation or logic error must fail fast, not loop.
 RETRY = RetryPolicy(max_attempts=3, initial_interval=0.5,
                     retry_on=(OSError, sqlite3.OperationalError))
@@ -100,7 +103,11 @@ def _frame(state: WorkflowState):
 def _agent(name: str, out_key: str | None):
     """Record the step, enforce the timeout, persist findings, emit events."""
     def deco(fn):
-        def node(state: WorkflowState) -> dict:
+        # Deliberately unannotated: LangGraph reads a node's input schema from
+        # this hint, and the wrapper serves more than one graph (the phase-1
+        # team and the investigation team). Unannotated, each graph uses its
+        # own state schema.
+        def node(state) -> dict:
             wid = state["workflow_id"]
             repo = _repo()
             step_id, attempt = repo.start_step(wid, name)
@@ -142,9 +149,11 @@ def data_quality(state: WorkflowState) -> dict:
     df = _frame(state)
     rep = validate_dataset(df)
     hash_ok = dataframe_sha256(df) == ds["sha256"]
-    # Only the built-in generator is KNOWN simulated. An upload is not assumed
-    # experimental - that would be a claim this service cannot verify.
-    data_class = "simulated" if ds.get("source") == "builtin" else "unknown"
+    # Only the built-in generator and the digital twin are KNOWN simulated. An
+    # upload is not assumed experimental - that would be a claim this service
+    # cannot verify.
+    data_class = ("simulated" if ds.get("source") in ("builtin", "simulation")
+                  else "unknown")
     _repo().update_workflow(state["workflow_id"], data_class=data_class)
 
     f = [dict(severity="error", code=x.error_code, message=x.message,
